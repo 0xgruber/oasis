@@ -1,7 +1,9 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import Cookies from 'js-cookie';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+// For browser clients, never default to `localhost` (that points to *their* machine).
+// Default to same-origin proxy at `/api` (see `frontend/next.config.mjs` rewrites).
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 // Create axios instance with base configuration
 const apiClient: AxiosInstance = axios.create({

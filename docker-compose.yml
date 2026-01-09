@@ -142,7 +142,13 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=development
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      # Browser clients must not use `localhost` (points to the viewer's machine).
+      # Use same-origin proxy via Next.js rewrite.
+      - NEXT_PUBLIC_API_BASE_URL=/api
+      # Internal destination for the rewrite (container network).
+      - API_INTERNAL_URL=http://api-service:8000
+      # Needed for accessing Next dev server from non-localhost origins (e.g. Tailscale).
+      - ALLOWED_DEV_ORIGINS=${ALLOWED_DEV_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://100.87.181.14:3000}
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -231,6 +237,8 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-oasis}
       - POSTGRES_USER=${POSTGRES_USER:-api_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      # Comma-separated list of allowed browser origins (CORS)
+      - CORS_ALLOW_ORIGINS=${CORS_ALLOW_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       - JWT_SECRET=${JWT_SECRET:-changeme-generate-secure-secret}
       - JWT_ALGORITHM=HS256
       - JWT_EXPIRATION_MINUTES=60

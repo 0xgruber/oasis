@@ -34,14 +34,23 @@ class OCSFNormalizer:
 
             # Map severity to OCSF severity_id
             severity_map = {
+                "trace": 1,
                 "debug": 1,
                 "informational": 1,
                 "info": 1,
+                "notice": 2,
                 "low": 2,
+                "warn": 3,
+                "warning": 3,
                 "medium": 3,
+                "error": 4,
+                "err": 4,
                 "high": 4,
                 "critical": 5,
+                "crit": 5,
+                "alert": 5,
                 "fatal": 6,
+                "emergency": 6,
             }
             severity = raw_log.get("severity", "informational").lower()
             severity_id = severity_map.get(severity, 1)
@@ -81,6 +90,7 @@ class OCSFNormalizer:
             return {
                 "timestamp": timestamp,  # Return datetime object for ClickHouse
                 "raw_log": str(raw_log),
+                "message": raw_log.get("message", ""),  # Extract message
                 "ocsf": ocsf,
                 "source_ip": source_ip,
                 "destination_ip": dest_ip,
@@ -97,6 +107,7 @@ class OCSFNormalizer:
             return {
                 "timestamp": datetime.utcnow(),  # Return datetime object
                 "raw_log": str(raw_log),
+                "message": raw_log.get("message", "Failed to normalize"),
                 "ocsf": {
                     "class_uid": 3001,
                     "severity_id": 1,

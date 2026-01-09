@@ -4,10 +4,13 @@ Query and management API with JWT authentication
 """
 
 from datetime import timedelta
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
+import json
+import os
 
 import structlog
 from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import asyncpg
@@ -22,6 +25,30 @@ app = FastAPI(
     title="O.A.S.I.S. API Service",
     description="Query and management API",
     version="0.1.0",
+)
+
+
+def _split_csv_env(name: str, default: List[str]) -> List[str]:
+    raw = os.getenv(name)
+    if not raw:
+        return default
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+# Allow SOC portal access from configurable dev/proxy origins.
+# In production, you should set `CORS_ALLOW_ORIGINS` to your portal domain(s).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_split_csv_env(
+        "CORS_ALLOW_ORIGINS",
+        [
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+        ],
+    ),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 security = HTTPBearer()
@@ -88,10 +115,16 @@ class HealthResponse(BaseModel):
 
 
 class LogEntry(BaseModel):
-    timestamp: str
+    uuid: str
     tenant_id: str
-    raw_log: str
+    timestamp: int  # milliseconds since epoch
     severity_id: int
+    category_uid: int
+    class_uid: int
+    message: Optional[str] = None
+    raw_log: str
+    ocsf: Dict[str, Any]
+    ingested_at: int  # milliseconds since epoch
 
 
 class LogsResponse(BaseModel):
@@ -227,11 +260,49 @@ async def query_logs(
     # Build table name
     table_name = f"logs_{tenant_id.replace('-', '_')}"
 
-    try:
-        # Query logs
+    def _get_table_columns() -> set[str]:
+        if not ch_client:
+            return set()
         result = ch_client.query(
             f"""
-            SELECT timestamp, tenant_id, raw_log, severity_id
+            SELECT name
+            FROM system.columns
+            WHERE database = '{settings.CLICKHOUSE_DB}' AND table = '{table_name}'
+            """
+        )
+        return {row[0] for row in result.result_rows}
+
+    try:
+        cols = _get_table_columns()
+
+        uuid_expr = (
+            "uuid"
+            if "uuid" in cols
+            else "reinterpretAsUUID(MD5(concat(toString(timestamp), raw_log))) AS uuid"
+        )
+        message_expr = "message" if "message" in cols else "'' AS message"
+
+        if "ingested_at" in cols:
+            ingested_at_expr = "ingested_at"
+        elif "indexed_at" in cols:
+            ingested_at_expr = "indexed_at AS ingested_at"
+        else:
+            ingested_at_expr = "timestamp AS ingested_at"
+
+        # Query logs (backward-compatible with older ClickHouse schemas)
+        result = ch_client.query(
+            f"""
+            SELECT
+                {uuid_expr},
+                timestamp,
+                tenant_id,
+                raw_log,
+                {message_expr},
+                severity_id,
+                category_uid,
+                class_uid,
+                ocsf,
+                {ingested_at_expr}
             FROM {settings.CLICKHOUSE_DB}.{table_name}
             ORDER BY timestamp DESC
             LIMIT {limit} OFFSET {offset}
@@ -243,14 +314,26 @@ async def query_logs(
         total = count_result.result_rows[0][0]
 
         # Format results
-        logs = []
+        logs: List[LogEntry] = []
         for row in result.result_rows:
+            # Parse OCSF JSON from string
+            try:
+                ocsf_data = json.loads(row[8]) if isinstance(row[8], str) else row[8]
+            except (json.JSONDecodeError, TypeError):
+                ocsf_data = {}
+
             logs.append(
                 LogEntry(
-                    timestamp=str(row[0]),
-                    tenant_id=str(row[1]),
-                    raw_log=row[2],
-                    severity_id=row[3],
+                    uuid=str(row[0]),
+                    timestamp=int(row[1].timestamp() * 1000),
+                    tenant_id=str(row[2]),
+                    raw_log=row[3],
+                    message=row[4] if row[4] else None,
+                    severity_id=row[5],
+                    category_uid=row[6],
+                    class_uid=row[7],
+                    ocsf=ocsf_data,
+                    ingested_at=int(row[9].timestamp() * 1000),
                 )
             )
 

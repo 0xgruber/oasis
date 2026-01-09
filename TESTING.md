@@ -1,412 +1,426 @@
-# O.A.S.I.S. Phase 1A - Testing Guide
+# O.A.S.I.S. Phase 1A Testing Checklist
 
-## Prerequisites
+This guide documents the exact steps required to validate the Phase 1A infrastructure (gateways, ingestion service, ClickHouse, API service, and SOC portal). Follow the sections in order to reproduce the test run that verified end-to-end log ingestion on January 8, 2026.
 
-- Docker and Docker Compose installed
-- Ports 3000, 8000, 8443, 8444, 5432, 8123, 9000, 6333 available
-- At least 16GB RAM available for all services
+---
 
-## Starting the Stack
+## 1. Prerequisites
 
-### 1. Set Up Environment Variables
+- Docker + Docker Compose installed
+- Local ports 3000, 8000, 8443, 8444, 15432, 8123, 9000, 6333 free
+- At least 16 GB RAM available
+- `.env` file populated with the following minimum values:
+  ```bash
+  POSTGRES_ADMIN_PASSWORD=changeme
+  CLICKHOUSE_ADMIN_PASSWORD=changeme
+  JWT_SECRET=super-secret-jwt-key
+  ```
+- Recommended but optional: run `docker system prune` before starting to ensure clean volumes
 
-```bash
-# Copy the example environment file
-cp .env.example .env
+---
 
-# Edit .env and set secure passwords
-nano .env
-```
+## 2. Start the Stack
 
-Minimum required variables:
-```bash
-POSTGRES_ADMIN_PASSWORD=your_secure_password
-CLICKHOUSE_ADMIN_PASSWORD=your_secure_password
-JWT_SECRET=your_jwt_secret_key
-```
+1. Build/start all services:
+   ```bash
+   docker compose down -v   # optional full reset
+   docker compose up -d
+   ```
+2. Wait ~2 minutes, then confirm container health:
+   ```bash
+   docker compose ps
+   ```
+   Expected status table (all Healthy): `api-service`, `external-gateway`, `internal-gateway`, `ingestion-service`, `clickhouse`, `postgresql`, `soc-portal`, `qdrant`.
 
-### 2. Start All Services
+3. Spot-check health endpoints:
+   ```bash
+   curl http://localhost:8000/health       # API service
+   curl http://localhost:8443/health       # External gateway
+   curl http://localhost:8444/health       # Internal gateway
+   curl http://localhost:8080/health       # Ingestion service
+   curl http://localhost:3000              # SOC portal (should return HTML)
+   curl http://localhost:6333/healthz      # Qdrant
+   ```
 
-```bash
-# Build and start all services
-docker compose up -d
+---
 
-# Check service health
-docker compose ps
+## 3. Seed Authentication Data
 
-# View logs (all services)
-docker compose logs -f
-
-# View logs (specific service)
-docker compose logs -f soc-portal
-docker compose logs -f api-service
-```
-
-Expected startup time: 2-3 minutes for all services to become healthy.
-
-### 3. Verify Services Are Running
-
-```bash
-# Check service health endpoints
-curl http://localhost:8000/health     # API Service
-curl http://localhost:3000            # SOC Portal
-```
-
-## Testing the Complete Pipeline
-
-### Step 1: Access the SOC Portal
-
-1. Open your browser and navigate to: **http://localhost:3000**
-2. You should be redirected to the login page
-
-### Step 2: Login with Default Credentials
-
-```
-Username: admin
-Password: Admin123!
-```
-
-**Expected Result:**
-- Successful login
-- Redirect to dashboard at http://localhost:3000/dashboard
-- JWT token stored in browser cookies
-- User information displayed in sidebar (username: admin, role: super_admin)
-
-### Step 3: Explore the Dashboard
-
-The dashboard should display:
-- Welcome message with username
-- Four stat cards (all showing 0 initially):
-  - Total Logs: 0
-  - Active Alerts: 0
-  - Sources: 0
-  - Ingestion Rate: 0/s
-- Quick Actions section with three cards
-- System Status section showing all services as "operational"
-
-### Step 4: View Logs
-
-1. Click on "Logs" in the sidebar navigation
-2. You should see the logs page at http://localhost:3000/dashboard/logs
-
-**Expected Result:**
-- Empty table with message "No logs found" (since no logs have been ingested yet)
-- Table headers: Timestamp, Severity, Message, Actions
-- Pagination controls (disabled when no logs)
-- Refresh button
-
-### Step 5: Ingest Test Logs
-
-Now let's send some test logs to verify the complete pipeline works.
-
-#### Option A: Using curl
+The dev database already contains a root tenant (`ffffffff-ffff-ffff-ffff-ffffffffffff`) with a `super_admin` user and API key. Validate the seed data:
 
 ```bash
-# Get your API key (from PostgreSQL)
-docker compose exec postgresql psql -U admin -d oasis -c \
-  "SELECT api_key FROM api_keys WHERE tenant_id = 'ffffffff-ffff-ffff-ffff-ffffffffffff';"
+# Verify admin account
+docker compose exec postgresql psql -U admin -d oasis \
+  -c "SELECT username, role FROM users WHERE username='admin';"
 
-# Send a test log
-curl -X POST http://localhost:8443/api/v1/ingest \
-  -H "X-API-Key: YOUR_API_KEY_HERE" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "timestamp": "2024-01-08T12:00:00Z",
-    "severity": "info",
-    "message": "Test log message from curl",
-    "source": "test-system",
-    "application": "test-app",
-    "raw_log": "Test log entry"
-  }'
+# Verify API key
+docker compose exec postgresql psql -U admin -d oasis \
+  -c "SELECT prefix, description FROM api_keys;"
 ```
 
-#### Option B: Using Vector (Recommended)
-
-1. Copy the Vector example configuration:
+If you need to regenerate the admin password hash for any reason:
 ```bash
-cp VECTOR_EXAMPLES/vector.toml.linux /tmp/vector.toml
-
-# Edit and add your API key
-nano /tmp/vector.toml
-```
-
-2. Run Vector:
-```bash
-vector --config /tmp/vector.toml
-```
-
-3. Generate test logs:
-```bash
-# Write to a file that Vector is watching
-echo '{"timestamp":"2024-01-08T12:00:00Z","severity":"info","message":"Test from Vector","source":"vector-agent"}' >> /tmp/test.log
-```
-
-### Step 6: Verify Logs in Portal
-
-1. Go back to http://localhost:3000/dashboard/logs
-2. Click the "Refresh" button
-3. You should now see your test logs in the table
-
-**Expected Result:**
-- Logs appear in the table with:
-  - Timestamp (formatted as YYYY-MM-DD HH:mm:ss)
-  - Severity badge (colored: Info = blue, Warning = yellow, Error = red, etc.)
-  - Truncated message
-  - "View" button
-- Total logs count updated at the top
-- Pagination works if more than 50 logs
-
-### Step 7: View Log Details
-
-1. Click on any log row or the "View" button
-2. A modal should appear with full log details
-
-**Expected Result:**
-- Modal displays:
-  - UUID (full log identifier)
-  - Timestamp (full datetime)
-  - Severity (with color)
-  - Raw Log (original log text)
-  - OCSF Data (normalized JSON structure)
-- Can close modal by clicking X or outside the modal
-
-### Step 8: Test Pagination
-
-If you have more than 50 logs:
-1. Navigate to page 2 using the "Next" button
-2. Verify different logs are displayed
-3. Click "Previous" to go back
-4. Current page number should be displayed
-
-### Step 9: Logout
-
-1. Click the logout icon (🚪) in the sidebar at the bottom
-2. Should be redirected to login page
-3. JWT token should be cleared from cookies
-
-### Step 10: Verify Authentication
-
-1. Try to access http://localhost:3000/dashboard directly
-2. Should be redirected to http://localhost:3000/login
-3. Login again to verify credentials work
-
-## Testing API Endpoints Directly
-
-### Login API
-
-```bash
-# Login and get JWT token
-curl -X POST http://localhost:8000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "username": "admin",
-    "password": "Admin123!"
-  }'
-
-# Response:
-# {
-#   "access_token": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-#   "token_type": "bearer"
-# }
-```
-
-### Query Logs API
-
-```bash
-# Get JWT token from login response above
-TOKEN="your_jwt_token_here"
-
-# Query logs
-curl -X GET "http://localhost:8000/logs?limit=10&offset=0" \
-  -H "Authorization: Bearer $TOKEN"
-
-# Response:
-# {
-#   "logs": [...],
-#   "total": 5,
-#   "offset": 0,
-#   "limit": 10
-# }
-```
-
-## Verifying Database State
-
-### PostgreSQL (Metadata)
-
-```bash
-# Connect to PostgreSQL
-docker compose exec postgresql psql -U admin -d oasis
-
-# Check tenants
-SELECT * FROM tenants;
-
-# Check users
-SELECT user_id, username, role, tenant_id FROM users;
-
-# Check API keys (hashed)
-SELECT api_key_id, tenant_id, created_at FROM api_keys;
-
-# Exit
-\q
-```
-
-### ClickHouse (Logs)
-
-```bash
-# Connect to ClickHouse
-docker compose exec clickhouse clickhouse-client
-
-# Check databases
-SHOW DATABASES;
-
-# Use oasis database
-USE oasis;
-
-# Check tables (should see logs_ffffffff-ffff-ffff-ffff-ffffffffffff)
-SHOW TABLES;
-
-# Query logs
-SELECT COUNT(*) FROM `logs_ffffffff-ffff-ffff-ffff-ffffffffffff`;
-
-# View recent logs
-SELECT timestamp, severity_id, message, raw_log 
-FROM `logs_ffffffff-ffff-ffff-ffff-ffffffffffff` 
-ORDER BY timestamp DESC 
-LIMIT 10;
-
-# Exit
-EXIT;
-```
-
-## Performance Testing
-
-### Load Testing with Apache Bench
-
-```bash
-# Get API key first
-API_KEY="your_api_key_here"
-
-# Prepare test payload
-cat > /tmp/test_log.json <<EOF
-{
-  "timestamp": "2024-01-08T12:00:00Z",
-  "severity": "info",
-  "message": "Load test log",
-  "source": "load-test"
-}
+docker compose exec api-service /app/.venv/bin/python3 - <<'EOF'
+import bcrypt
+print(bcrypt.hashpw(b'Admin123!', bcrypt.gensalt()).decode())
 EOF
+# Update users table with the new hash.
+```
 
-# Run load test (100 requests, 10 concurrent)
-ab -n 100 -c 10 \
-  -H "X-API-Key: $API_KEY" \
+---
+
+## 4. Send Verification Logs
+
+Use the external gateway (`http://localhost:8443`) and the known test API key `oasis-test-key-12345678` to send a diverse batch of logs mirroring the January 8 session.
+
+```bash
+curl -X POST http://localhost:8443/api/v1/ingest \
+  -H "Authorization: oasis-test-key-12345678" \
   -H "Content-Type: application/json" \
-  -p /tmp/test_log.json \
-  http://localhost:8443/api/v1/ingest
+  -d '{
+        "logs": [
+          {"timestamp":"2026-01-08T23:24:00Z","severity":"debug","message":"API request processed","source":"api-gateway","metadata":{"application":"gateway","host":"gateway-01","endpoint":"/api/v1/users","method":"GET","response_time_ms":42}},
+          {"timestamp":"2026-01-08T23:23:00Z","severity":"info","message":"User login successful","source":"auth-service","metadata":{"application":"authentication","host":"auth-server-01","username":"john.doe","ip_address":"10.0.1.50"}},
+          {"timestamp":"2026-01-08T23:22:00Z","severity":"critical","message":"Security alert: Multiple failed login attempts","source":"auth-service","metadata":{"application":"authentication","host":"auth-server-01","username":"admin","ip_address":"192.168.1.100","attempts":10}},
+          {"timestamp":"2026-01-08T23:21:00Z","severity":"error","message":"Failed to connect to database","source":"webapp","metadata":{"application":"customer-portal","host":"app-server-02","error_code":"CONN_TIMEOUT"}},
+          {"timestamp":"2026-01-08T23:20:00Z","severity":"warning","message":"High memory usage detected","source":"monitoring-agent","metadata":{"application":"system-monitor","host":"web-server-01","memory_percent":85.5}},
+          {"timestamp":"2026-01-08T23:15:00Z","severity":"info","message":"\uD83C\uDF89 FIRST SUCCESSFUL O.A.S.I.S. LOG!","source":"test-client","metadata":{"application":"oasis-test-app","host":"test-server-01"}}
+        ]
+      }'
+```
+Expected response:
+```json
+{"accepted": 6, "rejected": 0, "tenant_id": "ffffffff-ffff-ffff-ffff-ffffffffffff"}
 ```
 
-### Expected Performance
+---
 
-- **Ingestion**: 500-1000 logs/second (single gateway instance)
-- **Query**: Sub-second response for 50 logs
-- **Login**: < 100ms
-- **Frontend Load**: < 2 seconds initial load
+## 5. Verify ClickHouse Storage
 
-## Troubleshooting
-
-### Frontend Won't Start
+Run the following query to confirm the logs are present and normalized correctly (severity mapping now supports debug, info, warning, error, critical, fatal, etc.):
 
 ```bash
-# Check logs
-docker compose logs -f soc-portal
-
-# Common issues:
-# - Port 3000 already in use
-# - Node modules not installed (restart container)
+docker exec oasis-clickhouse clickhouse-client --query "\
+  SELECT timestamp, severity_id, JSONExtractString(raw_log, 'message') AS message \
+  FROM oasis.logs_ffffffff_ffff_ffff_ffff_ffffffffffff \
+  ORDER BY timestamp DESC LIMIT 6 FORMAT Pretty"
+```
+Example output:
+```
+┏─────────────────────────┳━━━━━━━━━━━━━┳────────────────────────────────────────────────────────────────────────────┓
+┃ timestamp               ┃ severity_id ┃ message                                                                     ┃
+┡─────────────────────────╇━━━━━━━━━━━━━╇────────────────────────────────────────────────────────────────────────────┩
+│ 2026-01-08 23:24:00.000 │           1 │ API request processed                                                       │
+│ 2026-01-08 23:23:00.000 │           1 │ User login successful                                                       │
+│ 2026-01-08 23:22:00.000 │           5 │ Security alert: Multiple failed login attempts                              │
+│ 2026-01-08 23:21:00.000 │           4 │ Failed to connect to database                                               │
+│ 2026-01-08 23:20:00.000 │           3 │ High memory usage detected                                                  │
+│ 2026-01-08 23:15:00.000 │           1 │ 🎉 FIRST SUCCESSFUL O.A.S.I.S. LOG!                                         │
+└─────────────────────────┴─────────────┴────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Can't Login
+Additional verification:
+```bash
+# Count rows
+docker exec oasis-clickhouse clickhouse-client --query "SELECT count() FROM oasis.logs_ffffffff_ffff_ffff_ffff_ffffffffffff"
+```
+
+---
+
+## 6. Test API Service (JWT + /logs)
+
+1. Authenticate as admin:
+   ```bash
+   curl -X POST http://localhost:8000/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username":"admin","password":"Admin123!"}'
+   ```
+   Expected response:
+   ```json
+   {
+     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+     "token_type": "bearer",
+     "user_id": "94d151bc-3428-49c2-a203-e4e321a427c7",
+     "tenant_id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+     "role": "super_admin"
+   }
+   ```
+
+2. Query logs with the returned token:
+   ```bash
+   TOKEN="<access_token>"
+   curl http://localhost:8000/logs?limit=10 \
+     -H "Authorization: Bearer $TOKEN" \
+     -s | python3 -m json.tool
+   ```
+   Expected JSON payload containing the 6 logs, total count, and tenant isolation enforced.
+
+---
+
+## 7. Validate SOC Portal
+
+1. Navigate to http://localhost:3000
+2. Login with admin / Admin123!
+3. Confirm dashboard renders service status cards and shows log count > 0 in the header
+4. Open `Logs` page → click `Refresh`
+   - Table should display the same 6 entries as the API response
+   - Severity colors: Debug (gray), Info (blue), Warning (yellow), Error (red), Critical (dark red)
+5. Click on a row to open the detail modal and verify the OCSF JSON block renders for each log
+6. Logout via the sidebar button and ensure you return to `/login`
+
+> Note: Phase 1A focuses on backend verification. The SOC portal currently displays raw ClickHouse fields; full OCSF rendering and pagination polish is deferred to Phase 1B.
+
+---
+
+## 8. Troubleshooting Reference
+
+| Symptom | Checks |
+| --- | --- |
+| `docker compose ps` shows unhealthy service | `docker logs <service>`; ensure `.env` matches container env |
+| Login returns 401 | Confirm admin hash in PostgreSQL; see Section 3 for regeneration command |
+| `/logs` returns zero rows | Verify ingestion service logs (`docker logs oasis-ingestion-service`) and ClickHouse table name (tenant-specific) |
+| Qdrant unhealthy | Ensure curl installed inside container (already handled) and `http://localhost:6333/healthz` responds |
+| SOC portal blank | `docker logs oasis-soc-portal` for Next.js errors, ensure API base URL env var is `http://api-service:8000` inside docker |
+
+---
+
+## 9. Success Criteria Summary
+
+Phase 1A validation is complete when:
+- [x] All containers report `healthy` (see Section 2)
+- [x] Authentication works (Section 6)
+- [x] External gateway accepts logs and ingestion service writes to ClickHouse (Section 4 + 5)
+- [x] API `/logs` endpoint returns tenant-scoped data (Section 6)
+- [x] SOC portal displays the ingested logs (Section 7)
+
+Document the results of each run (timestamp, git commit SHA, any deviations). The January 8 session corresponds to commit `d7bcdee` plus the follow-up fixes on this branch.
+
+---
+
+## 10. Phase 1B Testing Checklist
+
+Phase 1B extends Phase 1A with enhanced schema alignment, remote access support, and backward-compatible schema migrations.
+
+### 10.1. Prerequisites
+
+All Phase 1A prerequisites plus:
+- SOC Portal accessible via Tailscale or remote network (optional, for remote access testing)
+- Phase 1B code changes applied (see git commit for this phase)
+
+### 10.2. Verify Enhanced ClickHouse Schema
+
+Phase 1B adds `uuid`, `message`, and `ingested_at` columns to the logs table. Verify the schema includes all required fields:
 
 ```bash
-# Verify admin user exists
-docker compose exec postgresql psql -U admin -d oasis -c \
-  "SELECT username, role FROM users WHERE username='admin';"
-
-# Verify password hash (should see bcrypt hash starting with $2b$)
-docker compose exec postgresql psql -U admin -d oasis -c \
-  "SELECT password_hash FROM users WHERE username='admin';"
-
-# Check API service logs
-docker compose logs -f api-service
+docker exec oasis-clickhouse clickhouse-client --query "\
+  DESCRIBE TABLE oasis.logs_ffffffff_ffff_ffff_ffff_ffffffffffff FORMAT Pretty"
 ```
 
-### No Logs Appearing
+Expected columns (14 total):
+- `uuid` (UUID) - Auto-generated unique identifier
+- `timestamp` (DateTime64(3)) - Log event timestamp
+- `tenant_id` (UUID) - Tenant isolation
+- `raw_log` (String) - Original log payload
+- `message` (String) - Extracted message field
+- `ocsf` (Object('json')) - Full OCSF normalized data
+- `source_ip` (IPv4) - Source IP address
+- `destination_ip` (IPv4) - Destination IP address
+- `severity_id` (UInt8) - OCSF severity (1=info, 3=warning, 4=error, 5=critical)
+- `category_uid` (UInt16) - OCSF category
+- `class_uid` (UInt16) - OCSF class
+- `activity_id` (UInt8) - OCSF activity
+- `status_id` (UInt8) - OCSF status
+- `ingested_at` (DateTime64(3)) - Ingestion timestamp
+
+### 10.3. Test Enhanced Log Ingestion
+
+Send logs with explicit `message` fields to verify extraction works:
 
 ```bash
-# Check if logs reached ClickHouse
-docker compose exec clickhouse clickhouse-client \
-  --query "SELECT COUNT(*) FROM oasis.\`logs_ffffffff-ffff-ffff-ffff-ffffffffffff\`"
-
-# Check ingestion service logs
-docker compose logs -f ingestion-service
-
-# Check gateway logs
-docker compose logs -f external-gateway
+curl -X POST http://localhost:8443/api/v1/ingest \
+  -H "Authorization: Bearer oasis-test-key-12345678" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "logs": [
+      {
+        "timestamp": "2026-01-09T22:00:00Z",
+        "severity": "info",
+        "message": "Phase 1B test: Application started",
+        "source": "web-app",
+        "metadata": {"version": "2.0.0"}
+      },
+      {
+        "timestamp": "2026-01-09T22:01:00Z",
+        "severity": "warning",
+        "message": "Phase 1B test: Memory threshold exceeded",
+        "source": "monitoring",
+        "metadata": {"memory_mb": 1900}
+      },
+      {
+        "timestamp": "2026-01-09T22:02:00Z",
+        "severity": "error",
+        "message": "Phase 1B test: Database connection failed",
+        "source": "database-client",
+        "metadata": {"timeout_ms": 5000}
+      }
+    ]
+  }'
 ```
 
-### 401 Unauthorized Errors
+Expected response:
+```json
+{"accepted": 3, "rejected": 0, "tenant_id": "ffffffff-ffff-ffff-ffff-ffffffffffff"}
+```
+
+### 10.4. Verify Storage with New Schema
+
+Confirm logs are stored with all new fields populated:
 
 ```bash
-# JWT token may have expired (60 minutes)
-# Login again to get a new token
-
-# Verify JWT secret matches between .env and running containers
-docker compose exec api-service env | grep JWT_SECRET
+docker exec oasis-clickhouse clickhouse-client --query "\
+  SELECT uuid, timestamp, severity_id, message, ingested_at \
+  FROM oasis.logs_ffffffff_ffff_ffff_ffff_ffffffffffff \
+  WHERE message LIKE 'Phase 1B test:%' \
+  ORDER BY timestamp DESC FORMAT Pretty"
 ```
 
-## Stopping the Stack
+Expected output should show:
+- Unique UUIDs for each log
+- Extracted `message` field populated correctly
+- `ingested_at` timestamp (different from log `timestamp`)
+
+### 10.5. Test API Response Schema Alignment
+
+Phase 1B aligns the API response with the frontend `LogEntry` interface. Verify all required fields are present:
 
 ```bash
-# Stop all services (keeps data)
-docker compose stop
+# Authenticate
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"Admin123!"}' | jq -r .access_token)
 
-# Stop and remove containers (keeps volumes)
-docker compose down
-
-# Stop, remove containers, and delete all data
-docker compose down -v
+# Query logs and check schema
+curl -s "http://localhost:8000/logs?limit=3" \
+  -H "Authorization: Bearer $TOKEN" | jq '.logs[0] | keys'
 ```
 
-## Reset Everything
+Expected keys in response (10 fields):
+```json
+[
+  "category_uid",
+  "class_uid",
+  "ingested_at",
+  "message",
+  "ocsf",
+  "raw_log",
+  "severity_id",
+  "tenant_id",
+  "timestamp",
+  "uuid"
+]
+```
+
+Verify data types:
+```bash
+curl -s "http://localhost:8000/logs?limit=1" \
+  -H "Authorization: Bearer $TOKEN" | jq '.logs[0] | {
+    uuid: .uuid | type,
+    timestamp: .timestamp | type,
+    severity_id: .severity_id | type,
+    message: .message | type,
+    ocsf: .ocsf | type,
+    ingested_at: .ingested_at | type
+  }'
+```
+
+Expected types:
+- `uuid`: "string"
+- `timestamp`: "number" (milliseconds)
+- `severity_id`: "number"
+- `message`: "string"
+- `ocsf`: "object"
+- `ingested_at`: "number" (milliseconds)
+
+### 10.6. Test Remote Access (Same-Origin Proxy Pattern)
+
+Phase 1B implements a reverse proxy pattern for remote access without CORS issues.
+
+**From Remote Machine (via Tailscale):**
+
+1. Navigate to `http://<tailscale-ip>:3000`
+2. Login with `admin / Admin123!`
+3. Open Browser DevTools → Network tab
+4. Navigate to Logs page
+5. Verify API calls go to `/api/logs` (same origin, not `localhost:8000`)
+6. Confirm logs load successfully
+
+**From Local Machine:**
+
+1. Navigate to `http://localhost:3000`
+2. Same verification as above
+3. Confirm both local and remote access work identically
+
+### 10.7. Validate SOC Portal UI (Phase 1B)
+
+Enhanced UI validation for Phase 1B features:
+
+1. **Logs Page Display:**
+   - Navigate to Logs page
+   - Verify table shows logs with proper formatting
+   - Confirm severity badges display with correct colors
+   - Check timestamps are human-readable (not raw milliseconds)
+
+2. **Log Detail Modal:**
+   - Click "View" on any log
+   - Verify modal opens with complete log details
+   - Confirm UUID is displayed
+   - Check `message` field is prominently shown
+   - Verify OCSF JSON block renders properly
+   - Confirm `ingested_at` timestamp is visible
+
+3. **Navigation:**
+   - Click Analytics → Should show "Coming Soon" placeholder
+   - Click Alerts → Should show "Coming Soon" placeholder
+   - Click Settings → Should show "Coming Soon" placeholder
+   - All pages should load without 404 errors
+
+### 10.8. Test Backward Compatibility
+
+Phase 1B includes schema migration logic. Test that the API handles both old and new schemas:
 
 ```bash
-# Complete reset
-docker compose down -v
-docker volume prune -f
-docker compose up -d
+# Check if migration added columns to existing tables
+docker exec oasis-clickhouse clickhouse-client --query "\
+  SELECT name FROM system.columns \
+  WHERE database = 'oasis' \
+  AND table = 'logs_ffffffff_ffff_ffff_ffff_ffffffffffff' \
+  AND name IN ('uuid', 'message', 'ingested_at') \
+  FORMAT Pretty"
 ```
 
-Wait 2-3 minutes for services to become healthy, then test again.
+All three columns should be present, confirming automatic migration.
 
-## Success Criteria
+### 10.9. Phase 1B Success Criteria
 
-✅ **Phase 1A Complete** when all of these work:
-1. SOC Portal loads at http://localhost:3000
-2. Can login with admin/Admin123!
-3. Dashboard displays correctly
-4. Can submit logs via gateway API (curl or Vector)
-5. Logs appear in ClickHouse database
-6. Logs appear in SOC Portal logs page
-7. Can click on logs to view full details
-8. Pagination works
-9. Can logout and login again
-10. JWT authentication works on API endpoints
+Phase 1B validation is complete when:
+- [x] ClickHouse schema includes all 14 columns (uuid, message, ingested_at added)
+- [x] Log ingestion extracts and stores `message` field correctly
+- [x] API response matches frontend `LogEntry` interface (10 fields with correct types)
+- [x] Timestamps are returned as milliseconds (JavaScript-compatible)
+- [x] SOC Portal accessible via both local and remote networks
+- [x] Logs display correctly in UI with all new fields
+- [x] Log detail modal shows complete OCSF data
+- [x] Placeholder pages load without 404 errors
+- [x] Backward compatibility confirmed (migration works on existing tables)
 
-## Next Steps
+---
 
-After verifying Phase 1A works:
-1. Review `IMPROVEMENTS.md` for Phase 1B/1C/2 features
-2. Implement syslog listeners (UDP/TCP/TLS)
-3. Add tenant management UI
-4. Implement mTLS between services
-5. Add real-time metrics dashboard
-6. Implement alert management
+## 11. Next Steps (Phase 1C Targets)
+
+1. Add tenant-aware API key management endpoints (`POST /api-keys`, `GET /api-keys`, `DELETE /api-keys/:id`)
+2. Implement API key management UI in Settings page
+3. Re-enable mTLS between gateways and ingestion service
+4. Add filtering and search to Logs page (by severity, time range, message text)
+5. Expand test coverage (unit tests for normalizer, integration tests for schema compatibility)
+
+This document should be updated whenever the testing flow changes. Commit the new version along with any infrastructure modifications so future runs remain reproducible.
