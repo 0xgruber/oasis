@@ -1,0 +1,357 @@
+version: '3.9'
+
+#############################################################################
+# O.A.S.I.S. - Development Environment
+# Three-subnet architecture: DMZ, Internal, Backend
+#############################################################################
+
+networks:
+  dmz-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+  
+  internal-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+  
+  backend-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.22.0.0/24
+
+volumes:
+  clickhouse-data:
+  postgresql-data:
+  qdrant-data:
+
+services:
+  #############################################################################
+  # DMZ Subnet - Internet-Facing
+  #############################################################################
+  
+  external-gateway:
+    build:
+      context: ./services/external-gateway
+      dockerfile: Dockerfile
+    container_name: oasis-external-gateway
+    hostname: external-gateway
+    restart: unless-stopped
+    networks:
+      dmz-network:
+        ipv4_address: 172.20.0.10
+      backend-network:
+        ipv4_address: 172.22.0.10
+    ports:
+      - "8443:443"      # HTTPS (Vector/HTTP logs)
+      - "514:514/udp"   # Syslog UDP
+      - "514:514/tcp"   # Syslog TCP
+      - "6514:6514/tcp" # Syslog TLS
+    environment:
+      - GATEWAY_TYPE=external
+      - GATEWAY_NAME=External Gateway
+      - POSTGRES_HOST=postgresql
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-oasis}
+      - POSTGRES_USER=${POSTGRES_USER:-gateway_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - INGESTION_SERVICE_URL=https://ingestion-service:8080
+      - MTLS_CERT_PATH=/certs/gateway.crt
+      - MTLS_KEY_PATH=/certs/gateway.key
+      - MTLS_CA_PATH=/certs/ca.crt
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./infrastructure/certificates:/certs:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      ingestion-service:
+        condition: service_healthy
+  
+  #############################################################################
+  # Internal Subnet - Corporate Network
+  #############################################################################
+  
+  internal-gateway:
+    build:
+      context: ./services/internal-gateway
+      dockerfile: Dockerfile
+    container_name: oasis-internal-gateway
+    hostname: internal-gateway
+    restart: unless-stopped
+    networks:
+      internal-network:
+        ipv4_address: 172.21.0.10
+      backend-network:
+        ipv4_address: 172.22.0.11
+    ports:
+      - "8444:443"       # HTTPS (Vector/HTTP logs)
+      - "1514:514/udp"   # Syslog UDP (different host port to avoid conflict)
+      - "1514:514/tcp"   # Syslog TCP
+      - "7514:6514/tcp"  # Syslog TLS
+    environment:
+      - GATEWAY_TYPE=internal
+      - GATEWAY_NAME=Internal Gateway
+      - POSTGRES_HOST=postgresql
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-oasis}
+      - POSTGRES_USER=${POSTGRES_USER:-gateway_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - INGESTION_SERVICE_URL=https://ingestion-service:8080
+      - MTLS_CERT_PATH=/certs/gateway.crt
+      - MTLS_KEY_PATH=/certs/gateway.key
+      - MTLS_CA_PATH=/certs/ca.crt
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./infrastructure/certificates:/certs:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      ingestion-service:
+        condition: service_healthy
+  
+  soc-portal:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: development
+    container_name: oasis-soc-portal
+    hostname: soc-portal
+    restart: unless-stopped
+    networks:
+      internal-network:
+        ipv4_address: 172.21.0.20
+      backend-network:
+        ipv4_address: 172.22.0.20
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://api-service:8000
+      - API_SERVICE_URL=http://api-service:8000
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      api-service:
+        condition: service_healthy
+  
+  #############################################################################
+  # Backend Subnet - Database & Services
+  #############################################################################
+  
+  ingestion-service:
+    build:
+      context: ./services/ingestion-service
+      dockerfile: Dockerfile
+    container_name: oasis-ingestion-service
+    hostname: ingestion-service
+    restart: unless-stopped
+    networks:
+      backend-network:
+        ipv4_address: 172.22.0.30
+    environment:
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-oasis}
+      - CLICKHOUSE_USER=${CLICKHOUSE_INGESTION_USER:-ingestion_user}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_INGESTION_PASSWORD:-changeme}
+      - POSTGRES_HOST=postgresql
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-oasis}
+      - POSTGRES_USER=${POSTGRES_USER:-ingestion_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - MTLS_CERT_PATH=/certs/ingestion.crt
+      - MTLS_KEY_PATH=/certs/ingestion.key
+      - MTLS_CA_PATH=/certs/ca.crt
+      - BATCH_SIZE=${BATCH_SIZE:-1000}
+      - BATCH_TIMEOUT_SECONDS=${BATCH_TIMEOUT_SECONDS:-5}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./infrastructure/certificates:/certs:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+  
+  api-service:
+    build:
+      context: ./services/api-service
+      dockerfile: Dockerfile
+    container_name: oasis-api-service
+    hostname: api-service
+    restart: unless-stopped
+    networks:
+      backend-network:
+        ipv4_address: 172.22.0.40
+    environment:
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-oasis}
+      - CLICKHOUSE_USER=${CLICKHOUSE_API_USER:-api_user}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_API_PASSWORD:-changeme}
+      - POSTGRES_HOST=postgresql
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-oasis}
+      - POSTGRES_USER=${POSTGRES_USER:-api_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - JWT_SECRET=${JWT_SECRET:-changeme-generate-secure-secret}
+      - JWT_ALGORITHM=HS256
+      - JWT_EXPIRATION_MINUTES=60
+      - TOTP_ISSUER=O.A.S.I.S.
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+  
+  #############################################################################
+  # Databases
+  #############################################################################
+  
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.1
+    container_name: oasis-clickhouse
+    hostname: clickhouse
+    restart: unless-stopped
+    networks:
+      backend-network:
+        ipv4_address: 172.22.0.50
+    ports:
+      - "8123:8123"  # HTTP interface (for dev/debugging)
+      - "9000:9000"  # Native TCP
+    environment:
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-oasis}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+      - CLICKHOUSE_USER=${CLICKHOUSE_ADMIN_USER:-admin}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:-changeme}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./infrastructure/clickhouse/config.xml:/etc/clickhouse-server/config.d/oasis.xml:ro
+      - ./infrastructure/clickhouse/users.xml:/etc/clickhouse-server/users.d/oasis.xml:ro
+      - ./infrastructure/clickhouse/init:/docker-entrypoint-initdb.d:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+        reservations:
+          memory: 8G
+  
+  postgresql:
+    image: postgres:16-alpine
+    container_name: oasis-postgresql
+    hostname: postgresql
+    restart: unless-stopped
+    networks:
+      backend-network:
+        ipv4_address: 172.22.0.60
+    ports:
+      - "5432:5432"  # PostgreSQL (for dev/debugging)
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-oasis}
+      - POSTGRES_USER=${POSTGRES_ADMIN_USER:-admin}
+      - POSTGRES_PASSWORD=${POSTGRES_ADMIN_PASSWORD:-changeme}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgresql-data:/var/lib/postgresql/data
+      - ./infrastructure/postgresql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_ADMIN_USER:-admin} -d ${POSTGRES_DB:-oasis}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+  
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: oasis-qdrant
+    hostname: qdrant
+    restart: unless-stopped
+    networks:
+      backend-network:
+        ipv4_address: 172.22.0.70
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC API
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    volumes:
+      - qdrant-data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
