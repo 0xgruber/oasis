@@ -34,9 +34,15 @@ apiClient.interceptors.response.use(
   (error: AxiosError) => {
     if (error.response?.status === 401) {
       // Unauthorized - clear token and redirect to login
-      Cookies.remove('oasis_token');
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+      // BUT: Don't redirect if we're already on the login page or if this is a login request
+      const isLoginRequest = error.config?.url?.includes('/auth/login');
+      const isLoginPage = typeof window !== 'undefined' && window.location.pathname === '/login';
+      
+      if (!isLoginRequest && !isLoginPage) {
+        Cookies.remove('oasis_token');
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
