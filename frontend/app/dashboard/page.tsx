@@ -168,23 +168,32 @@ export default function DashboardPage() {
           >
             System Status
           </h2>
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[
-              { name: 'Gateway Service', status: 'operational' },
+              { name: 'Internal Gateway', status: 'operational' },
+              { name: 'External Gateway', status: 'operational' },
               { name: 'Ingestion Service', status: 'operational' },
               { name: 'API Service', status: 'operational' },
-              { name: 'Database', status: 'operational' },
+              { name: 'ClickHouse', status: 'operational' },
+              { name: 'PostgreSQL', status: 'operational' },
+              { name: 'Qdrant', status: 'operational' },
+              { name: 'SOC Portal', status: 'operational' },
             ].map((service) => (
               <div
                 key={service.name}
-                className="flex items-center justify-between p-3 rounded"
+                className="flex flex-col items-center justify-center p-4 rounded text-center"
                 style={{
                   background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
                   border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.2)' : '1px solid #475569'
                 }}
               >
-                <span style={{ color: 'var(--text-primary)' }}>{service.name}</span>
-                <span className="flex items-center" style={{ color: theme === 'cyber' ? 'var(--cyber-green)' : '#4ade80' }}>
+                <span 
+                  className="font-medium mb-2"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {service.name}
+                </span>
+                <span className="flex items-center text-sm" style={{ color: theme === 'cyber' ? 'var(--cyber-green)' : '#4ade80' }}>
                   <span 
                     className="w-2 h-2 rounded-full mr-2"
                     style={{ 
