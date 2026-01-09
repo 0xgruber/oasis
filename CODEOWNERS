@@ -1,0 +1,13 @@
+# Default owner for everything
+* @0xgruber
+
+# OpenSpec specifications
+/openspec/ @0xgruber
+
+# Security-related files
+/SECURITY.md @0xgruber
+/.github/workflows/ @0xgruber
+
+# Documentation
+/README.md @0xgruber
+/docs/ @0xgruber

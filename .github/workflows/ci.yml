@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Placeholder CI
+        run: |
+          echo "CI pipeline placeholder - will be expanded during Phase 1 implementation"
+          echo "Future checks will include:"
+          echo "  - Linting (Python: ruff/black, TypeScript: ESLint/Prettier)"
+          echo "  - Type checking (mypy, tsc)"
+          echo "  - Unit tests with coverage"
+          echo "  - Security scanning (Trivy, gitleaks, Syft)"
+          echo "  - Integration tests"
+          echo "  - Docker image builds"
