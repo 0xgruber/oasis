@@ -298,6 +298,40 @@ Shared:
 
 ---
 
+### Mobile-Friendly SOC Portal
+**Priority:** Medium  
+**Effort:** 2-3 weeks
+
+Implement responsive design for mobile and tablet devices.
+
+**Current Behavior:**
+- SOC Portal optimized for desktop browsers (1920x1080+)
+- Fixed sidebar layout breaks on mobile
+- Tables require horizontal scrolling
+- Modals may overflow small screens
+
+**Improvements:**
+- Responsive layout with breakpoints (mobile: <768px, tablet: 768-1024px, desktop: >1024px)
+- Collapsible sidebar with hamburger menu on mobile
+- Touch-friendly UI elements (larger tap targets, swipe gestures)
+- Stacked table layouts for mobile (card-based instead of table rows)
+- Modals adapt to screen size (full-screen on mobile)
+- Optimized cyber theme effects for lower-power mobile devices
+
+**Implementation:**
+- Tailwind CSS responsive utilities (sm:, md:, lg:, xl:)
+- Mobile-first CSS approach
+- Touch event handlers for swipe navigation
+- Viewport meta tag configuration
+- Progressive Web App (PWA) support (optional)
+
+**Benefits:**
+- Security analysts can monitor alerts on mobile devices
+- Improved accessibility for tablet users
+- Better incident response flexibility (on-the-go access)
+
+---
+
 ## Phase 3+ Features (AI Integration)
 
 ### Semantic Search with Qdrant

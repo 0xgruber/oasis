@@ -167,6 +167,126 @@ body {
   box-shadow: 0 0 10px var(--cyber-magenta);
 }
 
+/* Pickaxe Man Animation */
+.pickaxe-man {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pickaxe-man-body {
+  width: 16px;
+  height: 32px;
+  background: var(--text-primary);
+  border-radius: 2px;
+  position: absolute;
+  bottom: 16px;
+  left: 32px;
+  z-index: 2;
+}
+
+.pickaxe-man-body::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  background: var(--text-primary);
+  border-radius: 50%;
+  position: absolute;
+  top: -16px;
+  left: 0;
+}
+
+.pickaxe {
+  width: 32px;
+  height: 4px;
+  background: #8b4513;
+  position: absolute;
+  top: 24px;
+  left: 40px;
+  transform-origin: left center;
+  animation: swing-pickaxe 0.8s ease-in-out infinite;
+  z-index: 1;
+}
+
+.pickaxe::before {
+  content: '';
+  width: 12px;
+  height: 8px;
+  background: #666;
+  position: absolute;
+  right: -10px;
+  top: -2px;
+  border-radius: 2px;
+}
+
+.pickaxe::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: #444;
+  position: absolute;
+  right: -6px;
+  top: 4px;
+  border-radius: 0 0 2px 2px;
+}
+
+.rock {
+  width: 24px;
+  height: 20px;
+  background: #555;
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  border-radius: 2px;
+  z-index: 0;
+}
+
+.rock::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: #666;
+  position: absolute;
+  top: 4px;
+  left: 8px;
+  border-radius: 1px;
+}
+
+@keyframes swing-pickaxe {
+  0%, 100% {
+    transform: rotate(-20deg);
+  }
+  50% {
+    transform: rotate(30deg);
+  }
+}
+
+/* Cyber theme pickaxe colors */
+[data-theme="cyber"] .pickaxe-man-body,
+[data-theme="cyber"] .pickaxe-man-body::before {
+  background: var(--cyber-green);
+  box-shadow: 0 0 10px var(--cyber-green);
+}
+
+[data-theme="cyber"] .pickaxe {
+  background: var(--cyber-magenta);
+  box-shadow: 0 0 8px var(--cyber-magenta);
+}
+
+[data-theme="cyber"] .pickaxe::before {
+  background: var(--cyber-cyan);
+  box-shadow: 0 0 6px var(--cyber-cyan);
+}
+
+[data-theme="cyber"] .rock {
+  background: var(--cyber-yellow);
+  box-shadow: 0 0 10px var(--cyber-yellow);
+  opacity: 0.8;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

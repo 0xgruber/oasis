@@ -1,15 +1,22 @@
 'use client';
 
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import ThemeSwitcher from '@/components/ThemeSwitcher';
+import UserMenu from '@/components/UserMenu';
+import AccountSettingsModal from '@/components/AccountSettingsModal';
+import ChangeThemeModal from '@/components/ChangeThemeModal';
+import Toast from '@/components/Toast';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { theme } = useTheme();
   const pathname = usePathname();
+  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
+  const [toast, setToast] = useState<{ message: string; showPickaxe: boolean } | null>(null);
 
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: '📊' },
@@ -75,52 +82,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           })}
         </nav>
 
-        {/* User Info */}
+        {/* User Menu */}
         <div 
           className="absolute bottom-0 left-0 right-0 p-4"
           style={{ borderTop: `1px solid var(--sidebar-border)` }}
         >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center min-w-0 flex-1">
-              <div 
-                className="w-10 h-10 rounded-full flex items-center justify-center font-semibold mr-3"
-                style={{ 
-                  background: theme === 'cyber' ? 'var(--primary)' : '#2563eb',
-                  color: theme === 'cyber' ? '#0a0e27' : '#ffffff',
-                  boxShadow: theme === 'cyber' ? '0 0 15px var(--primary)' : undefined
-                }}
-              >
-                {user?.username?.[0]?.toUpperCase() || 'U'}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p 
-                  className="text-sm font-medium truncate" 
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  {user?.username}
-                </p>
-                <p 
-                  className="text-xs truncate" 
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  {user?.role}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center ml-2 space-x-2">
-              <ThemeSwitcher />
-              <button
-                onClick={logout}
-                className="transition-colors"
-                style={{ color: 'var(--text-secondary)' }}
-                title="Logout"
-                onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
-                onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
-              >
-                🚪
-              </button>
-            </div>
-          </div>
+          <UserMenu
+            username={user?.username || 'User'}
+            onOpenAccountSettings={() => setIsAccountModalOpen(true)}
+            onOpenThemeSettings={() => setIsThemeModalOpen(true)}
+          />
         </div>
       </div>
 
@@ -157,6 +128,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </main>
       </div>
+
+      {/* Modals */}
+      <AccountSettingsModal
+        isOpen={isAccountModalOpen}
+        onClose={() => setIsAccountModalOpen(false)}
+        onShowToast={(message) => setToast({ message, showPickaxe: true })}
+      />
+      <ChangeThemeModal
+        isOpen={isThemeModalOpen}
+        onClose={() => setIsThemeModalOpen(false)}
+      />
+
+      {/* Toast */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          showPickaxe={toast.showPickaxe}
+          onClose={() => setToast(null)}
+        />
+      )}
     </div>
   );
 }
