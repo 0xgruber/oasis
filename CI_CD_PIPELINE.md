@@ -6,15 +6,47 @@ This document describes the Continuous Integration and Continuous Deployment pip
 
 The CI/CD pipeline runs on every push and pull request to ensure code quality, security, and functionality. It consists of linting, type checking, testing, security scanning, and Docker image building.
 
+## CI Optimization: Chore PRs
+
+To preserve CI resources, pull requests with titles starting with `chore:` (case-insensitive) will skip heavy CI jobs while still running a lightweight validation check required by branch protection.
+
+**When heavy tests are skipped:**
+- PR titles starting with `chore:`, `Chore:`, or `CHORE:`
+- Examples: `chore: fix typo in README`, `Chore: update docs`
+
+**When heavy tests always run:**
+- All `push` events to `main` or `develop`
+- Pull requests with any non-chore prefix (`feat:`, `fix:`, `refactor:`, etc.)
+
+**Why this matters:**
+- Heavy CI includes security scanning (Trivy), Docker image builds, integration tests
+- Can take 5-10+ minutes per run
+- Chore PRs (docs, typos, formatting) don't need full validation
+- Branch protection is still satisfied by the lightweight validation job
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed PR title conventions.
+
 ## Workflows
 
 ### 1. CI Pipeline (`.github/workflows/ci.yml`)
 
 **Triggers:**
-- Push to any branch
-- Pull requests to `develop` or `main`
+- Push to `main` or `develop`
+- Pull requests to `main` or `develop`
 
 **Platform:** Ubuntu 24.04 LTS
+
+**Jobs:**
+
+#### Lightweight Validation (Always Runs)
+- Quick validation check (~5 seconds)
+- Satisfies branch protection requirements
+- Indicates whether heavy tests will run based on PR title
+
+#### Heavy CI Pipeline (Conditional)
+- **Runs on:** All `push` events, non-chore PRs
+- **Skips on:** Pull requests with `chore:` prefix
+- **Timeout:** 30 minutes
 
 **Stages:**
 
