@@ -2,22 +2,169 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Professional Theme (Default) */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+  --sidebar-bg: #ffffff;
+  --sidebar-border: #e5e7eb;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --table-header: #f9fafb;
+  --table-row: #ffffff;
+  --table-row-hover: #f9fafb;
+  --modal-bg: #ffffff;
+  --input-bg: #ffffff;
+  --input-border: #d1d5db;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Cyber Theme */
+[data-theme="cyber"] {
+  --background: #0a0e27;
+  --foreground: #00ff9f;
+  --card-bg: rgba(10, 14, 39, 0.8);
+  --card-border: #00ff9f;
+  --sidebar-bg: #0a0e27;
+  --sidebar-border: #00ff9f;
+  --primary: #00ff9f;
+  --primary-hover: #00d4ff;
+  --text-primary: #00ff9f;
+  --text-secondary: #00d4ff;
+  --table-header: rgba(0, 255, 159, 0.1);
+  --table-row: rgba(10, 14, 39, 0.5);
+  --table-row-hover: rgba(0, 255, 159, 0.1);
+  --modal-bg: rgba(10, 14, 39, 0.95);
+  --input-bg: rgba(10, 14, 39, 0.8);
+  --input-border: #00ff9f;
+  
+  /* Cyber-specific colors */
+  --cyber-green: #00ff9f;
+  --cyber-magenta: #ff00ff;
+  --cyber-cyan: #00d4ff;
+  --cyber-yellow: #ffff00;
+  --cyber-red: #ff0055;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Courier New', monospace;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Grid background for cyber theme */
+[data-theme="cyber"] body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    linear-gradient(rgba(0, 255, 159, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 159, 0.03) 1px, transparent 1px);
+  background-size: 50px 50px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Glitch effect for O.A.S.I.S. text */
+@keyframes glitch {
+  0%, 90%, 100% { transform: translate(0); }
+  92% { transform: translate(-2px, 2px); }
+  94% { transform: translate(2px, -2px); }
+  96% { transform: translate(-2px, -2px); }
+}
+
+@keyframes glitch-text {
+  0%, 90%, 100% { transform: translate(0); }
+  92% { 
+    transform: translate(-3px, 0); 
+    clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%); 
+  }
+  94% { 
+    transform: translate(3px, 0); 
+    clip-path: polygon(0 65%, 100% 65%, 100% 100%, 0 100%); 
+  }
+}
+
+.glitch-text {
+  position: relative;
+  display: inline-block;
+  animation: glitch 3s infinite;
+}
+
+.glitch-text::before {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  color: var(--cyber-magenta);
+  opacity: 0.8;
+  animation: glitch-text 3s infinite;
+  clip-path: polygon(0 0, 100% 0, 100% 45%, 0 45%);
+}
+
+/* Cyber text glow effects */
+[data-theme="cyber"] .text-glow {
+  text-shadow: 
+    0 0 10px var(--cyber-green),
+    0 0 20px var(--cyber-green),
+    0 0 40px var(--cyber-green);
+}
+
+[data-theme="cyber"] .text-glow-subtle {
+  text-shadow: 0 0 10px currentColor;
+}
+
+/* Terminal-style card effects */
+[data-theme="cyber"] .terminal-card {
+  border: 2px solid var(--card-border);
+  box-shadow: 
+    0 0 20px rgba(0, 255, 159, 0.3),
+    inset 0 0 40px rgba(0, 255, 159, 0.05);
+  transition: all 0.3s;
+}
+
+[data-theme="cyber"] .terminal-card:hover {
+  border-color: var(--cyber-magenta);
+  box-shadow: 
+    0 0 30px rgba(255, 0, 255, 0.4),
+    inset 0 0 40px rgba(255, 0, 255, 0.05);
+}
+
+/* Terminal header dots */
+.terminal-dots {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.terminal-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+[data-theme="cyber"] .terminal-dot:nth-child(1) {
+  background: var(--cyber-green);
+  box-shadow: 0 0 10px var(--cyber-green);
+}
+
+[data-theme="cyber"] .terminal-dot:nth-child(2) {
+  background: var(--cyber-yellow);
+  box-shadow: 0 0 10px var(--cyber-yellow);
+}
+
+[data-theme="cyber"] .terminal-dot:nth-child(3) {
+  background: var(--cyber-magenta);
+  box-shadow: 0 0 10px var(--cyber-magenta);
 }
 
 @layer utilities {
