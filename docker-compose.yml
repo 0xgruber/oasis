@@ -143,14 +143,13 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=development
-      - NEXT_PUBLIC_API_URL=http://api-service:8000
-      - API_SERVICE_URL=http://api-service:8000
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
     volumes:
       - ./frontend:/app
       - /app/node_modules
       - /app/.next
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -220,6 +219,8 @@ services:
     networks:
       backend-network:
         ipv4_address: 172.22.0.40
+    ports:
+      - "8000:8000"  # API HTTP (for frontend access)
     environment:
       - CLICKHOUSE_HOST=clickhouse
       - CLICKHOUSE_PORT=9000
