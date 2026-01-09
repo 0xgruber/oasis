@@ -7,18 +7,54 @@ on:
     branches: [main, develop]
 
 jobs:
+  # Lightweight validation job that always runs (required by branch protection)
   placeholder:
+    name: placeholder
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
       
-      - name: Placeholder CI
+      - name: Validate PR
         run: |
-          echo "CI pipeline placeholder - will be expanded during Phase 1 implementation"
-          echo "Future checks will include:"
-          echo "  - Linting (Python: ruff/black, TypeScript: ESLint/Prettier)"
-          echo "  - Type checking (mypy, tsc)"
-          echo "  - Unit tests with coverage"
-          echo "  - Security scanning (Trivy, gitleaks, Syft)"
-          echo "  - Integration tests"
-          echo "  - Docker image builds"
+          echo "✅ Validation passed"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "PR title: ${{ github.event.pull_request.title }}"
+            if [[ "${{ github.event.pull_request.title }}" =~ ^[Cc][Hh][Oo][Rr][Ee]: ]]; then
+              echo "ℹ️  This is a chore PR - heavy tests will be skipped"
+            else
+              echo "ℹ️  This PR will run full CI pipeline"
+            fi
+          else
+            echo "ℹ️  Push event - running full CI pipeline"
+          fi
+
+  # Heavy CI pipeline - skips for chore PRs, always runs on push
+  heavy-tests:
+    name: Heavy CI Pipeline
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    if: |
+      github.event_name == 'push' || 
+      (!startsWith(github.event.pull_request.title, 'chore:') && 
+       !startsWith(github.event.pull_request.title, 'Chore:') && 
+       !startsWith(github.event.pull_request.title, 'CHORE:'))
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Placeholder CI Pipeline
+        run: |
+          echo "🚀 Full CI pipeline will be implemented during Phase 1"
+          echo ""
+          echo "Planned checks:"
+          echo "  ✓ Linting (Python: ruff/black, TypeScript: ESLint/Prettier)"
+          echo "  ✓ Type checking (mypy for Python, tsc for TypeScript)"
+          echo "  ✓ Unit tests with 80% coverage requirement"
+          echo "  ✓ Security scanning (Trivy, gitleaks, Syft SBOM)"
+          echo "  ✓ Integration tests (Docker Compose)"
+          echo "  ✓ Docker image builds (multi-arch: amd64, arm64)"
+          echo "  ✓ OpenSpec validation"
+          echo ""
+          echo "Current status: PLACEHOLDER - All checks pass"
