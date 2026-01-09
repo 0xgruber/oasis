@@ -21,12 +21,21 @@ logger = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler"""
+    from src.database import db_pool
+
     logger.info(
         "gateway_starting",
         gateway_type=settings.GATEWAY_TYPE,
         gateway_name=settings.GATEWAY_NAME,
     )
+
+    # Initialize database connection pool
+    await db_pool.connect()
+
     yield
+
+    # Cleanup: close database pool
+    await db_pool.disconnect()
     logger.info("gateway_shutting_down")
 
 

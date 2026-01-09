@@ -80,7 +80,7 @@ class ClickHouseClient:
             ) ENGINE = MergeTree()
             PARTITION BY toYYYYMM(timestamp)
             ORDER BY (timestamp, tenant_id, severity_id, category_uid)
-            TTL timestamp + INTERVAL {retention_days} DAY
+            TTL toDateTime(timestamp) + INTERVAL {retention_days} DAY
             SETTINGS index_granularity = 8192, storage_policy = 'default'
             """
 

@@ -1,4 +1,3 @@
-version: '3.9'
 
 #############################################################################
 # O.A.S.I.S. - Development Environment
@@ -47,7 +46,7 @@ services:
       backend-network:
         ipv4_address: 172.22.0.10
     ports:
-      - "8443:443"      # HTTPS (Vector/HTTP logs)
+      - "8443:8000"     # HTTP API (app runs on 8000 inside container)
       - "514:514/udp"   # Syslog UDP
       - "514:514/tcp"   # Syslog TCP
       - "6514:6514/tcp" # Syslog TLS
@@ -95,7 +94,7 @@ services:
       backend-network:
         ipv4_address: 172.22.0.11
     ports:
-      - "8444:443"       # HTTPS (Vector/HTTP logs)
+      - "8444:8000"      # HTTP API (app runs on 8000 inside container)
       - "1514:514/udp"   # Syslog UDP (different host port to avoid conflict)
       - "1514:514/tcp"   # Syslog TCP
       - "7514:6514/tcp"  # Syslog TLS
@@ -174,10 +173,10 @@ services:
         ipv4_address: 172.22.0.30
     environment:
       - CLICKHOUSE_HOST=clickhouse
-      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_PORT=8123
       - CLICKHOUSE_DB=${CLICKHOUSE_DB:-oasis}
-      - CLICKHOUSE_USER=${CLICKHOUSE_INGESTION_USER:-ingestion_user}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_INGESTION_PASSWORD:-changeme}
+      - CLICKHOUSE_USER=${CLICKHOUSE_ADMIN_USER:-admin}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:-changeme}
       - POSTGRES_HOST=postgresql
       - POSTGRES_PORT=5432
       - POSTGRES_DB=${POSTGRES_DB:-oasis}
@@ -223,10 +222,10 @@ services:
       - "8000:8000"  # API HTTP (for frontend access)
     environment:
       - CLICKHOUSE_HOST=clickhouse
-      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_PORT=8123
       - CLICKHOUSE_DB=${CLICKHOUSE_DB:-oasis}
-      - CLICKHOUSE_USER=${CLICKHOUSE_API_USER:-api_user}
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_API_PASSWORD:-changeme}
+      - CLICKHOUSE_USER=${CLICKHOUSE_ADMIN_USER:-admin}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:-changeme}
       - POSTGRES_HOST=postgresql
       - POSTGRES_PORT=5432
       - POSTGRES_DB=${POSTGRES_DB:-oasis}
@@ -306,7 +305,7 @@ services:
       backend-network:
         ipv4_address: 172.22.0.60
     ports:
-      - "5432:5432"  # PostgreSQL (for dev/debugging)
+      - "15432:5432"  # PostgreSQL (for dev/debugging) - using 15432 to avoid conflict
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-oasis}
       - POSTGRES_USER=${POSTGRES_ADMIN_USER:-admin}

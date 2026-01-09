@@ -79,7 +79,7 @@ class OCSFNormalizer:
                 dest_ip = raw_log["metadata"].get("destination_ip", "0.0.0.0")
 
             return {
-                "timestamp": timestamp.isoformat(),
+                "timestamp": timestamp,  # Return datetime object for ClickHouse
                 "raw_log": str(raw_log),
                 "ocsf": ocsf,
                 "source_ip": source_ip,
@@ -95,7 +95,7 @@ class OCSFNormalizer:
             logger.error("log_normalization_failed", error=str(e), raw_log=raw_log)
             # Return minimal OCSF on error
             return {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.utcnow(),  # Return datetime object
                 "raw_log": str(raw_log),
                 "ocsf": {
                     "class_uid": 3001,

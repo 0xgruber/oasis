@@ -1,57 +1,8 @@
 <clickhouse>
     <profiles>
         <default>
-            <max_memory_usage>8G</max_memory_usage>
-            <use_uncompressed_cache>1</use_uncompressed_cache>
-            <load_balancing>random</load_balancing>
+            <!-- Allow experimental JSON/Object columns for OCSF data -->
+            <allow_experimental_object_type>1</allow_experimental_object_type>
         </default>
-        
-        <ingestion>
-            <max_memory_usage>4G</max_memory_usage>
-            <max_execution_time>60</max_execution_time>
-        </ingestion>
-        
-        <query>
-            <max_memory_usage>2G</max_memory_usage>
-            <max_execution_time>300</max_execution_time>
-            <readonly>1</readonly>
-        </query>
     </profiles>
-
-    <users>
-        <!-- Ingestion user - INSERT only -->
-        <ingestion_user>
-            <password>${CLICKHOUSE_INGESTION_PASSWORD}</password>
-            <networks>
-                <ip>::/0</ip>
-            </networks>
-            <profile>ingestion</profile>
-            <quota>default</quota>
-            <access_management>0</access_management>
-        </ingestion_user>
-        
-        <!-- API user - SELECT only -->
-        <api_user>
-            <password>${CLICKHOUSE_API_PASSWORD}</password>
-            <networks>
-                <ip>::/0</ip>
-            </networks>
-            <profile>query</profile>
-            <quota>default</quota>
-            <access_management>0</access_management>
-        </api_user>
-    </users>
-
-    <quotas>
-        <default>
-            <interval>
-                <duration>3600</duration>
-                <queries>0</queries>
-                <errors>0</errors>
-                <result_rows>0</result_rows>
-                <read_rows>0</read_rows>
-                <execution_time>0</execution_time>
-            </interval>
-        </default>
-    </quotas>
 </clickhouse>

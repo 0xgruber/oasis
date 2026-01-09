@@ -69,18 +69,18 @@ async def ingest_logs(
     )
 
     # TODO: Implement rate limiting based on tenant EPS limit
-    # TODO: Forward to ingestion service via mTLS
+    # TODO: For Phase 1A, mTLS is disabled. Enable in Phase 1B.
 
     try:
-        # Forward to ingestion service
-        async with httpx.AsyncClient(verify=settings.MTLS_CA_PATH) as client:
+        # Forward to ingestion service (without mTLS for Phase 1A)
+        async with httpx.AsyncClient(verify=False) as client:
             response = await client.post(
-                f"{settings.INGESTION_SERVICE_URL}/ingest",
+                # Use HTTP instead of HTTPS for Phase 1A (no mTLS yet)
+                f"http://ingestion-service:8080/ingest",
                 json={
                     "tenant_id": tenant_id,
                     "logs": [log.model_dump() for log in batch.logs],
                 },
-                cert=(settings.MTLS_CERT_PATH, settings.MTLS_KEY_PATH),
                 timeout=30.0,
             )
 
