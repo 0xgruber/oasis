@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 
 interface UserMenuProps {
@@ -12,14 +12,9 @@ interface UserMenuProps {
 
 export default function UserMenu({ username, onOpenAccountSettings, onOpenThemeSettings }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const router = useRouter();
+  const { logout } = useAuth();
   const { theme } = useTheme();
   const menuRef = useRef<HTMLDivElement>(null);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    router.push('/login');
-  };
 
   const handleMenuClick = (action: () => void) => {
     setIsOpen(false);
@@ -125,7 +120,7 @@ export default function UserMenu({ username, onOpenAccountSettings, onOpenThemeS
             <div className="my-2 border-t" style={{ borderColor: 'var(--card-border)' }}></div>
 
             <button
-              onClick={() => handleMenuClick(handleLogout)}
+              onClick={() => handleMenuClick(logout)}
               className="w-full text-left px-4 py-3 rounded-lg transition-all flex items-center gap-3"
               style={{
                 color: theme === 'cyber' ? 'var(--cyber-red)' : '#ef4444',

@@ -11,14 +11,16 @@ interface AccountSettingsModalProps {
 
 export default function AccountSettingsModal({ isOpen, onClose, onShowToast }: AccountSettingsModalProps) {
   const { theme } = useTheme();
-  const [formData, setFormData] = useState({
+  const initialFormData = {
     firstName: 'Admin',
     lastName: 'User',
     email: 'admin@oasis.local',
     oldPassword: '',
     newPassword: '',
     confirmPassword: '',
-  });
+  };
+  
+  const [formData, setFormData] = useState(initialFormData);
 
   // Mock user roles
   const userRoles = ['Administrator', 'Security Analyst'];
@@ -43,7 +45,20 @@ export default function AccountSettingsModal({ isOpen, onClose, onShowToast }: A
     }
   };
 
+  const hasChanges = () => {
+    return formData.firstName !== initialFormData.firstName ||
+           formData.lastName !== initialFormData.lastName ||
+           formData.email !== initialFormData.email ||
+           formData.oldPassword !== '' ||
+           formData.newPassword !== '' ||
+           formData.confirmPassword !== '';
+  };
+
   const handleSave = () => {
+    if (!hasChanges()) {
+      onClose();
+      return;
+    }
     onShowToast('⚠️ Feature requires backend API - Coming in Phase 1C');
     onClose();
   };
@@ -86,18 +101,21 @@ export default function AccountSettingsModal({ isOpen, onClose, onShowToast }: A
           </h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded flex items-center justify-center transition-all"
+            className="w-10 h-10 rounded flex items-center justify-center transition-all text-xl font-bold border"
             style={{
               color: 'var(--text-secondary)',
               background: 'transparent',
+              borderColor: 'rgba(128, 128, 128, 0.5)',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--table-row-hover)';
               e.currentTarget.style.color = 'var(--text-primary)';
+              e.currentTarget.style.borderColor = 'var(--card-border)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
               e.currentTarget.style.color = 'var(--text-secondary)';
+              e.currentTarget.style.borderColor = 'rgba(128, 128, 128, 0.5)';
             }}
           >
             ✕

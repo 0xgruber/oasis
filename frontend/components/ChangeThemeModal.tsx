@@ -63,18 +63,21 @@ export default function ChangeThemeModal({ isOpen, onClose }: ChangeThemeModalPr
           </h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded flex items-center justify-center transition-all"
+            className="w-10 h-10 rounded flex items-center justify-center transition-all text-xl font-bold border"
             style={{
               color: 'var(--text-secondary)',
               background: 'transparent',
+              borderColor: 'rgba(128, 128, 128, 0.5)',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--table-row-hover)';
               e.currentTarget.style.color = 'var(--text-primary)';
+              e.currentTarget.style.borderColor = 'var(--card-border)';
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.background = 'transparent';
               e.currentTarget.style.color = 'var(--text-secondary)';
+              e.currentTarget.style.borderColor = 'rgba(128, 128, 128, 0.5)';
             }}
           >
             ✕

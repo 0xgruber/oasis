@@ -4,22 +4,22 @@
 
 /* Professional Theme (Default) */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --card-bg: #ffffff;
-  --card-border: #e5e7eb;
-  --sidebar-bg: #ffffff;
-  --sidebar-border: #e5e7eb;
+  --background: #0f172a;
+  --foreground: #f1f5f9;
+  --card-bg: #1e293b;
+  --card-border: #334155;
+  --sidebar-bg: #1e293b;
+  --sidebar-border: #334155;
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
-  --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --table-header: #f9fafb;
-  --table-row: #ffffff;
-  --table-row-hover: #f9fafb;
-  --modal-bg: #ffffff;
-  --input-bg: #ffffff;
-  --input-border: #d1d5db;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --table-header: #1e293b;
+  --table-row: #0f172a;
+  --table-row-hover: #1e293b;
+  --modal-bg: #1e293b;
+  --input-bg: #0f172a;
+  --input-border: #334155;
 }
 
 /* Cyber Theme */

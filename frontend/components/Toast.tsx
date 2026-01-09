@@ -10,7 +10,7 @@ interface ToastProps {
   showPickaxe?: boolean;
 }
 
-export default function Toast({ message, onClose, duration = 3000, showPickaxe = false }: ToastProps) {
+export default function Toast({ message, onClose, duration = 5000, showPickaxe = false }: ToastProps) {
   const { theme } = useTheme();
 
   useEffect(() => {
