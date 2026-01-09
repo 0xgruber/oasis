@@ -54,8 +54,8 @@ The system SHALL design REST APIs with future natural language query support.
 - **AND** provide JSON responses parseable by LLMs
 - **AND** include error messages suitable for LLM interpretation
 
-### Requirement: Privacy and Local Processing
-The system SHALL ensure all AI processing occurs locally without external API calls, with support for distributed on-premise deployment.
+### Requirement: Privacy and Local Processing with Multi-Tenancy
+The system SHALL ensure all AI processing occurs locally without external API calls, with support for distributed on-premise deployment and strict tenant data isolation.
 
 #### Scenario: No external LLM dependencies
 - **WHEN** the system is deployed
@@ -74,3 +74,10 @@ The system SHALL ensure all AI processing occurs locally without external API ca
 - **THEN** communication uses secure internal network protocols (mutual TLS)
 - **AND** API keys authenticate inter-service communication
 - **AND** no data traverses public internet
+
+#### Scenario: Tenant-isolated AI queries (Phase 3)
+- **WHEN** a user asks an AI question about logs via MCP/LLM
+- **THEN** the MCP server extracts tenant_id from user's JWT
+- **AND** scopes all database tool queries to that tenant's logs_{tenant_uuid} table
+- **AND** never returns data from other tenants
+- **AND** logs AI query to audit_logs with tenant_id

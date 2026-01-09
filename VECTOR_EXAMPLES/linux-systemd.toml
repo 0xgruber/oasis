@@ -1,0 +1,56 @@
+# Vector Configuration Example: Linux Systemd Journal
+# Collect systemd journal logs and send to O.A.S.I.S.
+
+# Data source: Systemd journal
+[sources.journald]
+type = "journald"
+current_boot_only = true
+units = ["ssh.service", "nginx.service", "docker.service"]  # Specify services or remove to collect all
+
+# Transform: Add metadata and filter
+[transforms.enrich_journal]
+type = "remap"
+inputs = ["journald"]
+source = '''
+  .host = get_hostname()
+  .oasis_tenant = "internal"  # Replace with your tenant name
+  .timestamp = to_unix_timestamp(now())
+  .source_type = "systemd_journal"
+  .severity = .PRIORITY
+  .unit = ._SYSTEMD_UNIT
+  .message = .MESSAGE
+'''
+
+# Transform: Filter by priority (optional: only errors and higher)
+[transforms.filter_priority]
+type = "filter"
+inputs = ["enrich_journal"]
+condition = 'to_int(.PRIORITY) <= 4'  # 0=emerg, 1=alert, 2=crit, 3=err, 4=warning
+
+# Sink: Send to O.A.S.I.S. Internal Gateway
+[sinks.oasis_gateway]
+type = "http"
+inputs = ["filter_priority"]
+uri = "https://internal-gateway.oasis-siem.local/ingest"
+method = "post"
+compression = "gzip"
+encoding.codec = "json"
+batch.max_bytes = 1048576  # 1MB
+batch.timeout_secs = 5
+
+# Authentication: API key header
+[sinks.oasis_gateway.request.headers]
+X-API-Key = "${OASIS_API_KEY}"  # Set via environment variable
+Content-Type = "application/json"
+
+# TLS: Trust O.A.S.I.S. self-signed CA
+[sinks.oasis_gateway.tls]
+ca_file = "/etc/vector/certs/oasis-ca.pem"
+verify_certificate = true
+verify_hostname = true
+
+# Buffer: Local disk buffer for reliability
+[sinks.oasis_gateway.buffer]
+type = "disk"
+max_size = 268435456  # 256MB
+when_full = "block"

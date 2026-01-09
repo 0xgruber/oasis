@@ -1,0 +1,69 @@
+# Vector Configuration Example: Docker Container Logs
+# Collect logs from Docker containers and send to O.A.S.I.S.
+
+# Data source: Docker container logs via Docker socket
+[sources.docker_logs]
+type = "docker_logs"
+docker_host = "unix:///var/run/docker.sock"  # Linux/macOS
+# docker_host = "npipe:////./pipe/docker_engine"  # Windows
+include_containers = []  # Empty = all containers
+exclude_containers = ["vector"]  # Don't collect Vector's own logs
+
+# Transform: Add metadata and parse
+[transforms.enrich_docker]
+type = "remap"
+inputs = ["docker_logs"]
+source = '''
+  .host = get_hostname()
+  .oasis_tenant = "internal"  # Replace with your tenant name
+  .timestamp = to_unix_timestamp(now())
+  .source_type = "docker_logs"
+  .container_name = .container_name
+  .container_id = .container_id
+  .image = .image
+  .message = .message
+  
+  # Parse JSON logs if applicable
+  parsed, err = parse_json(.message)
+  if err == null {
+    .log_level = parsed.level
+    .log_message = parsed.msg
+  }
+'''
+
+# Transform: Filter by container label (optional)
+[transforms.filter_labeled]
+type = "filter"
+inputs = ["enrich_docker"]
+condition = '''
+  .label."com.docker.compose.project" == "production" ||
+  .label."environment" == "production"
+'''
+
+# Sink: Send to O.A.S.I.S. Internal Gateway
+[sinks.oasis_gateway]
+type = "http"
+inputs = ["filter_labeled"]
+uri = "https://internal-gateway.oasis-siem.local/ingest"
+method = "post"
+compression = "gzip"
+encoding.codec = "json"
+batch.max_bytes = 1048576  # 1MB
+batch.timeout_secs = 5
+
+# Authentication: API key header
+[sinks.oasis_gateway.request.headers]
+X-API-Key = "${OASIS_API_KEY}"  # Set via environment variable
+Content-Type = "application/json"
+
+# TLS: Trust O.A.S.I.S. self-signed CA
+[sinks.oasis_gateway.tls]
+ca_file = "/etc/vector/certs/oasis-ca.pem"
+verify_certificate = true
+verify_hostname = true
+
+# Buffer: Local disk buffer for reliability
+[sinks.oasis_gateway.buffer]
+type = "disk"
+max_size = 268435456  # 256MB
+when_full = "block"
