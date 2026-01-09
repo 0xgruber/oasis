@@ -3,12 +3,14 @@
 import { useState, FormEvent, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
+import Toast from '@/components/Toast';
 
 export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const { login, isAuthenticated, error } = useAuth();
+  const [toast, setToast] = useState<{ message: string } | null>(null);
+  const { login, isAuthenticated } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
@@ -24,8 +26,11 @@ export default function LoginPage() {
 
     try {
       await login({ username, password });
-    } catch {
-      // Error is handled by AuthContext
+      // If successful, AuthContext will redirect via useEffect above
+    } catch (err: any) {
+      // Show toast with error message
+      const errorMessage = err?.response?.data?.detail || 'Invalid username or password';
+      setToast({ message: errorMessage });
     } finally {
       setIsSubmitting(false);
     }
@@ -40,13 +45,6 @@ export default function LoginPage() {
             <h1 className="text-4xl font-bold text-white mb-2">O.A.S.I.S.</h1>
             <p className="text-slate-400 text-sm">SOC Portal</p>
           </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="mb-6 p-4 bg-red-900/50 border border-red-700 rounded-lg">
-              <p className="text-red-200 text-sm">{error}</p>
-            </div>
-          )}
 
           {/* Login Form */}
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -104,6 +102,16 @@ export default function LoginPage() {
           Open-Source AI SIEM Intelligence System
         </p>
       </div>
+
+      {/* Toast for errors */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          showPickaxe={false}
+          onClose={() => setToast(null)}
+          duration={5000}
+        />
+      )}
     </div>
   );
 }
