@@ -186,7 +186,7 @@ export default function DashboardPage() {
                 border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.3)' : '1px solid rgba(100, 116, 139, 0.5)',
               }}
             >
-              ⚙️ Settings
+              👤 Account Settings
             </button>
           </div>
         </div>
