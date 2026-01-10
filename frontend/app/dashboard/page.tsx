@@ -131,6 +131,18 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [user]); // Re-run when user changes
 
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showModal) {
+        setShowModal(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscKey);
+    return () => document.removeEventListener('keydown', handleEscKey);
+  }, [showModal]);
+
   const cardClass = theme === 'cyber' 
     ? 'terminal-card rounded-lg p-6' 
     : 'bg-slate-800 rounded-lg p-6 border border-slate-700';
