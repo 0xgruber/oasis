@@ -137,37 +137,152 @@ Closes #123"
 git push origin develop
 ```
 
-### 7. Release to Main
+### 7. Production Release to Main (Only When v1.0.0 Ready)
 
-**Periodic releases from develop to main:**
+**CRITICAL:** Do NOT merge to `main` until ALL phases complete and production-ready.
+
+**Decision Tree:**
+```
+Is this production-ready? (All phases complete + tested)
+  ├─ YES → Continue below (PR to main)
+  └─ NO  → Merge to develop instead (stop here)
+```
+
+**When Ready for Production (v1.0.0):**
 ```bash
+# 1. Ensure all phases complete (check PHASE_TRACKER.md)
+# 2. Create PR from develop to main
+gh pr create --base main --head develop --title "chore: Release v1.0.0" --body "Production release - all phases complete"
+
+# 3. Merge using admin flag (main is protected)
+gh pr merge --admin --squash
+
+# 4. Tag the release
 git checkout main
 git pull origin main
-git merge --no-ff develop -m "chore: Release v1.2.0"
-git tag v1.2.0
+git tag v1.0.0
 git push origin main --tags
 ```
 
+**Why `--admin` flag?**
+- `main` branch has protection rules (requires PR + approval)
+- `--admin` bypasses protection for authorized users
+- Use ONLY for production releases (v1.0.0+)
+- See [PHASE_TRACKER.md](PHASE_TRACKER.md) for release criteria
+
+## Phase-Based Development Workflow
+
+O.A.S.I.S. uses a phase-driven approach with strict branch discipline.
+
+### Visual Workflow
+
+```
+feature/phase1c ──┐
+                  ├──> develop (accumulate all phases)
+feature/phase1d ──┤            │
+                  │            │
+feature/phase2 ───┤            │
+                  │            │
+feature/phase3 ───┘            │
+                               │
+                        (all phases complete)
+                               │
+                               ├──> main (PR + gh pr merge --admin)
+                               │            │
+                               └──────> Tag v1.0.0
+```
+
+### Creating Phase Branches
+
+```bash
+# 1. Check current phase status
+cat PHASE_TRACKER.md
+
+# 2. Create phase branch from develop
+git checkout develop
+git pull origin develop
+git checkout -b feature/phase1c
+
+# 3. Implement phase (see IMPROVEMENTS.md for requirements)
+git add .
+git commit -m "feat(monitoring): add dynamic service status endpoint"
+
+# 4. Push to remote
+git push -u origin feature/phase1c
+```
+
+### Merging Phase to Develop
+
+**Option A: Direct Merge (Simple Phase)**
+```bash
+# When phase complete (all tasks in PHASE_TRACKER.md checked)
+git checkout develop
+git pull origin develop
+git merge --no-ff feature/phase1c -m "feat: Complete Phase 1C - Service Monitoring & Account APIs"
+git push origin develop
+
+# Update PHASE_TRACKER.md to mark phase complete
+```
+
+**Option B: Pull Request (Complex Phase)**
+```bash
+# Create PR for review
+gh pr create --base develop --head feature/phase1c \
+  --title "feat: Phase 1C - Service Monitoring & Account APIs" \
+  --body "Implements dynamic service status monitoring with Docker SDK. See IMPROVEMENTS.md lines 7-103."
+
+# After approval, squash merge
+gh pr merge --squash
+```
+
+### Important Phase Rules
+
+1. **Branch Naming:** `feature/phase{number}` (e.g., `feature/phase1c`, `feature/phase2`)
+2. **Merge Target:** Always merge to `develop` first (NEVER directly to `main`)
+3. **Completion Check:** Update [PHASE_TRACKER.md](PHASE_TRACKER.md) before merging
+4. **Commit Convention:** Use `feat:` prefix for phase completions
+5. **Phase Dependencies:** Complete phases in order (1C before 1D)
+
+### When to Use Hotfix Branches
+
+**Hotfixes** are for production emergencies ONLY. Since `main` is currently documentation-only (no code until v1.0.0), hotfixes are NOT needed until post-v1.0.0 releases.
+
+**Post-v1.0.0 Hotfix Process:**
+See section "Handling Hotfixes" below (lines 172-200).
+
 ## Branch Protection Rules
 
-### `main` and `develop` branches:
-- ✅ Require pull request before merging
+### `main` branch (Production Only):
+- ✅ **Protected** - Requires PR + `--admin` flag to merge
 - ✅ Require 1 approval from @0xgruber
 - ✅ Dismiss stale pull request approvals when new commits pushed
 - ✅ Require status checks to pass:
   - CI/CD pipeline (linting, tests, security scans)
   - Security: No HIGH/CRITICAL vulnerabilities (Trivy)
   - Coverage: Minimum 80% code coverage
-- ❌ Prevent force pushes
+- ❌ Prevent force pushes (except emergency revert)
 - ❌ Prevent branch deletion
+- **Merge Strategy:** Squash merge ONLY (clean history)
+- **Purpose:** Production releases ONLY (v1.0.0+)
+
+### `develop` branch (Active Development):
+- ❌ **Unprotected** - Direct push allowed for fast iteration
+- ✅ Requires PR for major changes (recommended, not enforced)
+- **Merge Strategy:** Squash merge from feature branches
+- **Purpose:** All phase development (Phase 1C, 1D, 2, 3, etc.)
+- **Testing:** CI runs on push (linting, tests, security scans)
 
 ## Merge Strategy
 
-| Source → Target | Strategy | Reason |
-|-----------------|----------|--------|
-| Feature → Develop | **Squash merge** | Clean history, single commit per feature |
-| Develop → Main | **Merge commit** | Preserve release history |
-| Hotfix → Main | **Merge commit**, then cherry-pick to develop | Emergency fixes |
+| Source → Target | Strategy | Reason | When |
+|-----------------|----------|--------|------|
+| Feature (Phase) → Develop | **Squash merge** or **Merge commit** | Clean history per phase | After phase complete |
+| Develop → Main | **Squash merge** (via `gh pr merge --admin --squash`) | Production release only | v1.0.0+ (all phases done) |
+| Hotfix → Main | **Merge commit**, then cherry-pick to develop | Emergency fixes | Post-v1.0.0 only |
+
+**Current Strategy (Pre-v1.0.0):**
+- Phase branches → `develop`: Merge frequently as phases complete
+- `develop` → `main`: **DO NOT MERGE** until v1.0.0 ready (see [PHASE_TRACKER.md](PHASE_TRACKER.md))
 
 ## Handling Hotfixes
 

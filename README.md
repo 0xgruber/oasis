@@ -13,6 +13,21 @@ O.A.S.I.S. is an open-source, AI-driven Security Information and Event Managemen
 - **Scalable Architecture**: Designed for development on consumer-grade hardware, production deployment on server infrastructure
 - **Distributed Deployment**: GPU/VRAM-intensive AI services can run on dedicated hardware separate from core SIEM services
 
+## 📚 Documentation
+
+| Document | Description |
+|----------|-------------|
+| [PHASE_TRACKER.md](PHASE_TRACKER.md) | Current phase status and production release criteria |
+| [GIT_WORKFLOW.md](GIT_WORKFLOW.md) | Branching strategy, commit conventions, and PR process |
+| [INDEX.md](INDEX.md) | Complete documentation catalog organized by category |
+| [TESTING.md](TESTING.md) | Test strategy, coverage requirements, and running tests |
+| [openspec/AGENTS.md](openspec/AGENTS.md) | AI assistant workflow instructions (critical for contributors) |
+
+**Quick Links:**
+- [Current Phase Status](PHASE_TRACKER.md) - See what's being worked on now
+- [Git Workflow](GIT_WORKFLOW.md) - How to contribute code
+- [All Documentation](INDEX.md) - Complete catalog
+
 ## Architecture Overview
 
 O.A.S.I.S. uses a three-subnet architecture for defense in depth:

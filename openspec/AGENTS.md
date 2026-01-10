@@ -2,6 +2,56 @@
 
 Instructions for AI coding assistants using OpenSpec for spec-driven development.
 
+## ⚠️ CRITICAL: Git Workflow Checklist
+
+**BEFORE creating branches or merging code, ALWAYS complete this checklist:**
+
+1. **Recall Workflow from MCP Memory:**
+   ```
+   unified-mcp_recall_memory "oasis git workflow"
+   ```
+   - Review full workflow (branch structure, decision tree, validation checklist)
+
+2. **Verify Current Phase:**
+   - Read [../PHASE_TRACKER.md](../PHASE_TRACKER.md)
+   - Check "Active Phase" and "Branch" fields
+   - Confirm phase dependencies met (e.g., Phase 1C complete before 1D)
+
+3. **Decision Tree: Where to Merge?**
+   ```
+   Is this production-ready? (All phases complete + tested)
+     ├─ YES → PR to main (use gh pr merge --admin --squash)
+     └─ NO  → Merge to develop (direct push or simple PR)
+   ```
+   - **Default:** Merge to `develop` (safer than `main`)
+   - **Exception:** ONLY merge to `main` when v1.0.0 ready (see PHASE_TRACKER.md)
+
+4. **Branch Protection Awareness:**
+   - **`main`:** Protected (requires PR + `--admin` flag)
+   - **`develop`:** Unprotected (direct push allowed)
+   - **Purpose:** `main` = production-only, `develop` = active development
+
+5. **Pre-Merge Validation:**
+   - [ ] Conventional commit format (`feat:`, `fix:`, `chore:`, etc.)
+   - [ ] PHASE_TRACKER.md updated if phase complete
+   - [ ] OpenSpec validated if applicable (`openspec validate --strict`)
+   - [ ] Tests passing (80% coverage minimum)
+   - [ ] Security scans passing (Trivy, gitleaks)
+
+6. **Phase-Based Branch Naming:**
+   - Use `feature/phase{number}` (e.g., `feature/phase1c`)
+   - NOT `feature/add-endpoint` or generic names
+   - Ensures traceability to PHASE_TRACKER.md
+
+7. **Emergency Override Procedure:**
+   - If unsure about merge target: **default to `develop`**
+   - Never force push to `main` (except authorized revert)
+   - Consult [../GIT_WORKFLOW.md](../GIT_WORKFLOW.md) for edge cases
+
+**CRITICAL REMINDER:** Do NOT merge to `main` until v1.0.0 (all phases complete). Check [../PHASE_TRACKER.md](../PHASE_TRACKER.md) production release criteria.
+
+---
+
 ## TL;DR Quick Checklist
 
 - Search existing work: `openspec spec list --long`, `openspec list` (use `rg` only for full-text search)
