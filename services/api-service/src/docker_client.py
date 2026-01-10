@@ -84,6 +84,8 @@ def get_service_status() -> dict[str, Any]:
 
             # Format service name for display (capitalize words, remove hyphens)
             display_name = service_name.replace("-", " ").title()
+            # Fix acronyms to uppercase
+            display_name = display_name.replace("Api", "API").replace("Soc", "SOC")
 
             services.append(
                 {

@@ -285,92 +285,153 @@ export default function DashboardPage() {
               No services found
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {services.map((service) => {
-                const statusColor = getStatusColor(service.status, service.state);
-                const statusText = getStatusText(service.status, service.state);
-                
-                return (
-                  <div
-                    key={service.container}
-                    className="flex flex-col p-4 rounded"
-                    style={{
-                      background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
-                      border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.2)' : '1px solid #475569'
-                    }}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <span 
-                        className="font-medium"
-                        style={{ color: 'var(--text-primary)' }}
-                      >
-                        {service.name}
-                      </span>
-                      <span 
-                        className="text-xs px-2 py-1 rounded"
-                        style={{ 
-                          background: 'rgba(0, 0, 0, 0.3)',
-                          color: 'var(--text-secondary)'
-                        }}
-                      >
-                        {formatUptime(service.uptime_seconds)}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center text-sm mb-2">
-                      <span 
-                        className="w-2 h-2 rounded-full mr-2"
-                        style={{ 
-                          background: statusColor,
-                          boxShadow: theme === 'cyber' ? `0 0 10px ${statusColor}` : undefined
-                        }}
-                      ></span>
-                      <span style={{ color: statusColor }}>
-                        {statusText}
-                      </span>
-                    </div>
-                    
-                    {service.networks.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {(() => {
-                          // Determine primary network (DMZ > Internal > Backend)
-                          // Only show backend badge if it's the only network
-                          const hasDMZ = service.networks.some(n => n.includes('dmz'));
-                          const hasInternal = service.networks.some(n => n.includes('internal'));
-                          const hasBackend = service.networks.some(n => n.includes('backend'));
-                          
-                          const badges = [];
-                          
-                          if (hasDMZ) {
-                            badges.push({ label: 'DMZ', color: '#f59e0b' }); // amber
-                          }
-                          if (hasInternal) {
-                            badges.push({ label: 'Internal', color: '#8b5cf6' }); // purple
-                          }
-                          // Only show backend if it's the only network
-                          if (hasBackend && !hasDMZ && !hasInternal) {
-                            badges.push({ label: 'Backend', color: '#6366f1' }); // indigo
-                          }
-                          
-                          return badges.map((badge) => (
-                            <span
-                              key={badge.label}
+            <div className="space-y-6">
+              {/* Group services by network zone */}
+              {(() => {
+                // Categorize services by primary network
+                const dmzServices = services.filter(s => s.networks.some(n => n.includes('dmz')));
+                const internalServices = services.filter(s => 
+                  !s.networks.some(n => n.includes('dmz')) && 
+                  s.networks.some(n => n.includes('internal'))
+                );
+                const backendServices = services.filter(s => 
+                  !s.networks.some(n => n.includes('dmz')) && 
+                  !s.networks.some(n => n.includes('internal'))
+                );
+
+                const renderServiceCards = (serviceList: ServiceStatus[]) => (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {serviceList.map((service) => {
+                      const statusColor = getStatusColor(service.status, service.state);
+                      const statusText = getStatusText(service.status, service.state);
+                      
+                      return (
+                        <div
+                          key={service.container}
+                          className="flex flex-col p-4 rounded"
+                          style={{
+                            background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
+                            border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.2)' : '1px solid #475569'
+                          }}
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <span 
+                              className="font-medium"
+                              style={{ color: 'var(--text-primary)' }}
+                            >
+                              {service.name}
+                            </span>
+                            <span 
                               className="text-xs px-2 py-1 rounded"
-                              style={{
-                                background: `${badge.color}33`,
-                                color: badge.color,
-                                border: `1px solid ${badge.color}66`
+                              style={{ 
+                                background: 'rgba(0, 0, 0, 0.3)',
+                                color: 'var(--text-secondary)'
                               }}
                             >
-                              {badge.label}
+                              {formatUptime(service.uptime_seconds)}
                             </span>
-                          ));
-                        })()}
-                      </div>
-                    )}
+                          </div>
+                          
+                          <div className="flex items-center text-sm mb-2">
+                            <span 
+                              className="w-2 h-2 rounded-full mr-2"
+                              style={{ 
+                                background: statusColor,
+                                boxShadow: theme === 'cyber' ? `0 0 10px ${statusColor}` : undefined
+                              }}
+                            ></span>
+                            <span style={{ color: statusColor }}>
+                              {statusText}
+                            </span>
+                          </div>
+                          
+                          {service.networks.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {(() => {
+                                // Determine primary network (DMZ > Internal > Backend)
+                                // Only show backend badge if it's the only network
+                                const hasDMZ = service.networks.some(n => n.includes('dmz'));
+                                const hasInternal = service.networks.some(n => n.includes('internal'));
+                                const hasBackend = service.networks.some(n => n.includes('backend'));
+                                
+                                const badges = [];
+                                
+                                if (hasDMZ) {
+                                  badges.push({ label: 'DMZ', color: '#f59e0b' }); // amber
+                                }
+                                if (hasInternal) {
+                                  badges.push({ label: 'Internal', color: '#8b5cf6' }); // purple
+                                }
+                                // Only show backend if it's the only network
+                                if (hasBackend && !hasDMZ && !hasInternal) {
+                                  badges.push({ label: 'Backend', color: '#6366f1' }); // indigo
+                                }
+                                
+                                return badges.map((badge) => (
+                                  <span
+                                    key={badge.label}
+                                    className="text-xs px-2 py-1 rounded"
+                                    style={{
+                                      background: `${badge.color}33`,
+                                      color: badge.color,
+                                      border: `1px solid ${badge.color}66`
+                                    }}
+                                  >
+                                    {badge.label}
+                                  </span>
+                                ));
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
-              })}
+
+                return (
+                  <>
+                    {/* DMZ Zone */}
+                    {dmzServices.length > 0 && (
+                      <div>
+                        <h3 
+                          className="text-md font-semibold mb-3 flex items-center"
+                          style={{ color: '#f59e0b' }}
+                        >
+                          <span className="mr-2">🌐</span> DMZ Zone
+                        </h3>
+                        {renderServiceCards(dmzServices)}
+                      </div>
+                    )}
+
+                    {/* Internal Zone */}
+                    {internalServices.length > 0 && (
+                      <div>
+                        <h3 
+                          className="text-md font-semibold mb-3 flex items-center"
+                          style={{ color: '#8b5cf6' }}
+                        >
+                          <span className="mr-2">🏢</span> Internal Zone
+                        </h3>
+                        {renderServiceCards(internalServices)}
+                      </div>
+                    )}
+
+                    {/* Backend Zone */}
+                    {backendServices.length > 0 && (
+                      <div>
+                        <h3 
+                          className="text-md font-semibold mb-3 flex items-center"
+                          style={{ color: '#6366f1' }}
+                        >
+                          <span className="mr-2">⚙️</span> Backend Zone
+                        </h3>
+                        {renderServiceCards(backendServices)}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
