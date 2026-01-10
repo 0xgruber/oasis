@@ -63,7 +63,8 @@ export default function DashboardPage() {
     try {
       const token = localStorage.getItem('access_token');
       if (!token) {
-        setServicesError('Not authenticated');
+        setServicesError('No authentication token found');
+        setServicesLoading(false);
         return;
       }
 
@@ -74,7 +75,10 @@ export default function DashboardPage() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+        if (response.status === 401) {
+          throw new Error('Authentication failed - please login again');
+        }
+        throw new Error(`Failed to fetch services (HTTP ${response.status})`);
       }
 
       const data = await response.json();
@@ -90,6 +94,13 @@ export default function DashboardPage() {
 
   // Poll service status every 30 seconds
   useEffect(() => {
+    // Only fetch if user is authenticated
+    if (!user) {
+      setServicesLoading(false);
+      setServicesError('Not authenticated');
+      return;
+    }
+
     fetchServiceStatus(); // Initial fetch
     
     const interval = setInterval(() => {
@@ -97,7 +108,7 @@ export default function DashboardPage() {
     }, 30000); // 30 seconds
     
     return () => clearInterval(interval);
-  }, []);
+  }, [user]); // Re-run when user changes
 
   const cardClass = theme === 'cyber' 
     ? 'terminal-card rounded-lg p-6' 
