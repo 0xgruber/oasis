@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { tokenUtils } from '@/lib/auth';
 
 interface ServiceStatus {
   name: string;
@@ -61,7 +62,7 @@ export default function DashboardPage() {
   // Fetch service status
   const fetchServiceStatus = async () => {
     try {
-      const token = localStorage.getItem('access_token');
+      const token = tokenUtils.getToken();
       if (!token) {
         setServicesError('No authentication token found');
         setServicesLoading(false);
