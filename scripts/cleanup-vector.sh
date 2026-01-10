@@ -1,240 +1,163 @@
 #!/bin/bash
+# O.A.S.I.S. Vector Cleanup Script (Linux)
+# Removes all Vector installations and configurations
+# 
+# Usage: sudo bash scripts/cleanup-vector.sh
+
 set -e
 
-###############################################################################
-# Vector Cleanup Script
-# Removes all Vector installations and configurations
-###############################################################################
-
 echo "========================================"
-echo "Vector Cleanup Script"
+echo "Vector Cleanup Script (Linux)"
 echo "========================================"
 echo ""
 
-# Detect OS
-OS="$(uname -s)"
-case "${OS}" in
-    Linux*)     OS_TYPE=Linux;;
-    Darwin*)    OS_TYPE=macOS;;
-    *)          OS_TYPE="UNKNOWN:${OS}"
-esac
-
-echo "Detected OS: ${OS_TYPE}"
-echo ""
-
-if [[ "$OS_TYPE" == "UNKNOWN"* ]]; then
-    echo "❌ Unsupported operating system: ${OS}"
-    exit 1
+# Check root privileges
+if [ "$EUID" -ne 0 ]; then 
+  echo "❌ ERROR: This script must be run as root (use sudo)"
+  exit 1
 fi
 
-# Function to stop and remove services
-cleanup_services() {
-    echo "Stopping Vector services..."
-    
-    if [[ "$OS_TYPE" == "macOS" ]]; then
-        # Stop and unload LaunchDaemon/LaunchAgent
-        if launchctl list | grep -q "vector"; then
-            echo "  - Stopping Vector via launchctl..."
-            sudo launchctl stop io.vector.agent 2>/dev/null || true
-            launchctl stop io.vector.agent 2>/dev/null || true
-            sudo launchctl unload /Library/LaunchDaemons/io.vector.agent.plist 2>/dev/null || true
-            launchctl unload ~/Library/LaunchAgents/homebrew.mxcl.vector.plist 2>/dev/null || true
-        fi
-        
-        # Stop Homebrew service if it exists
-        if command -v brew &> /dev/null; then
-            brew services stop vector 2>/dev/null || true
-            sudo brew services stop vector 2>/dev/null || true
-        fi
-        
-        echo "  ✓ Services stopped"
-        
-    elif [[ "$OS_TYPE" == "Linux" ]]; then
-        # Stop systemd service
-        if systemctl is-active --quiet vector 2>/dev/null; then
-            echo "  - Stopping Vector systemd service..."
-            sudo systemctl stop vector
-            sudo systemctl disable vector
-            echo "  ✓ Service stopped and disabled"
-        else
-            echo "  - Vector service not running"
-        fi
-    fi
-}
+# Detect OS
+OS_TYPE=$(uname -s)
 
-# Function to remove LaunchDaemon/systemd units
-remove_service_units() {
-    echo ""
-    echo "Removing service units..."
-    
-    if [[ "$OS_TYPE" == "macOS" ]]; then
-        # Remove LaunchDaemon
-        if [[ -f "/Library/LaunchDaemons/io.vector.agent.plist" ]]; then
-            echo "  - Removing /Library/LaunchDaemons/io.vector.agent.plist"
-            sudo rm -f /Library/LaunchDaemons/io.vector.agent.plist
-        fi
-        
-        # Remove LaunchAgent (Homebrew default)
-        if [[ -f "$HOME/Library/LaunchAgents/homebrew.mxcl.vector.plist" ]]; then
-            echo "  - Removing ~/Library/LaunchAgents/homebrew.mxcl.vector.plist"
-            rm -f "$HOME/Library/LaunchAgents/homebrew.mxcl.vector.plist"
-        fi
-        
-        echo "  ✓ Service units removed"
-        
-    elif [[ "$OS_TYPE" == "Linux" ]]; then
-        # Remove systemd unit
-        if [[ -f "/etc/systemd/system/vector.service" ]]; then
-            echo "  - Removing /etc/systemd/system/vector.service"
-            sudo rm -f /etc/systemd/system/vector.service
-            sudo systemctl daemon-reload
-            echo "  ✓ Service unit removed"
-        else
-            echo "  - No systemd unit found"
-        fi
-    fi
-}
+if [ "$OS_TYPE" != "Linux" ]; then
+  echo "❌ ERROR: This script only supports Linux"
+  echo "   Detected OS: $OS_TYPE"
+  echo ""
+  echo "For Windows, use: scripts\\cleanup-vector.ps1"
+  exit 1
+fi
 
-# Function to uninstall Vector
-uninstall_vector() {
-    echo ""
-    echo "Uninstalling Vector..."
-    
-    if [[ "$OS_TYPE" == "macOS" ]]; then
-        # Check if installed via Homebrew
-        if command -v brew &> /dev/null && brew list vector &> /dev/null; then
-            echo "  - Uninstalling Vector via Homebrew..."
-            brew uninstall vector
-            brew untap vectordotdev/brew 2>/dev/null || true
-            echo "  ✓ Homebrew package removed"
-        fi
-        
-        # Remove binary if installed via official installer
-        if [[ -f "/usr/local/bin/vector" ]]; then
-            echo "  - Removing /usr/local/bin/vector"
-            sudo rm -f /usr/local/bin/vector
-        fi
-        
-        if [[ -f "/opt/homebrew/bin/vector" ]]; then
-            echo "  - Removing /opt/homebrew/bin/vector"
-            sudo rm -f /opt/homebrew/bin/vector
-        fi
-        
-    elif [[ "$OS_TYPE" == "Linux" ]]; then
-        # Remove binary
-        if [[ -f "/usr/local/bin/vector" ]]; then
-            echo "  - Removing /usr/local/bin/vector"
-            sudo rm -f /usr/local/bin/vector
-        fi
-        
-        if [[ -f "/usr/bin/vector" ]]; then
-            echo "  - Removing /usr/bin/vector"
-            sudo rm -f /usr/bin/vector
-        fi
-        
-        # Remove package if installed via package manager
-        if command -v apt-get &> /dev/null && dpkg -l | grep -q vector; then
-            echo "  - Removing Vector via apt..."
-            sudo apt-get remove -y vector
-        elif command -v yum &> /dev/null && yum list installed | grep -q vector; then
-            echo "  - Removing Vector via yum..."
-            sudo yum remove -y vector
-        fi
-    fi
-    
-    echo "  ✓ Vector binary removed"
-}
+echo "Detected OS: Linux"
+echo ""
 
-# Function to remove configuration and data directories
-remove_directories() {
-    echo ""
-    echo "Removing configuration and data directories..."
-    
-    # Common directories to check
-    declare -a DIRS=(
-        "/etc/vector"
-        "/usr/local/etc/vector"
-        "/opt/homebrew/etc/vector"
-        "/var/lib/vector"
-        "/usr/local/var/lib/vector"
-        "/opt/homebrew/var/lib/vector"
-        "/var/log/vector.log"
-        "/usr/local/var/log/vector.log"
-        "/opt/homebrew/var/log/vector.log"
-    )
-    
-    for dir in "${DIRS[@]}"; do
-        if [[ -e "$dir" ]]; then
-            echo "  - Removing $dir"
-            sudo rm -rf "$dir"
-        fi
-    done
-    
-    echo "  ✓ Directories cleaned up"
-}
+# Step 1: Stop Vector service
+echo "🛑 Step 1/7: Stopping Vector service..."
 
-# Function to verify cleanup
-verify_cleanup() {
-    echo ""
-    echo "Verifying cleanup..."
-    
-    # Check for running processes
-    if pgrep -x vector &> /dev/null; then
-        echo "  ⚠️  Warning: Vector process still running"
-        echo "     PIDs: $(pgrep -x vector | tr '\n' ' ')"
-    else
-        echo "  ✓ No Vector processes running"
-    fi
-    
-    # Check for binary
-    if command -v vector &> /dev/null; then
-        echo "  ⚠️  Warning: Vector binary still in PATH"
-        echo "     Location: $(which vector)"
-    else
-        echo "  ✓ Vector binary not in PATH"
-    fi
-    
-    # Check if Homebrew still lists it
-    if [[ "$OS_TYPE" == "macOS" ]] && command -v brew &> /dev/null; then
-        if brew list vector &> /dev/null; then
-            echo "  ⚠️  Warning: Homebrew still lists Vector as installed"
-        else
-            echo "  ✓ Vector not in Homebrew packages"
-        fi
-    fi
-}
+if systemctl is-active --quiet vector 2>/dev/null; then
+  echo "   Stopping Vector systemd service..."
+  systemctl stop vector
+  systemctl disable vector
+  echo "   ✅ Service stopped and disabled"
+else
+  echo "   ℹ️  Vector service not running"
+fi
+echo ""
 
-# Main execution
-main() {
-    echo "This script will completely remove Vector from your system."
-    echo "This includes:"
-    echo "  - Vector service (LaunchDaemon/systemd)"
-    echo "  - Vector binary"
-    echo "  - Configuration files"
-    echo "  - Data directories"
-    echo "  - Log files"
-    echo ""
-    read -p "Do you want to continue? (y/N): " -n 1 -r
-    echo ""
-    
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Cleanup cancelled."
-        exit 0
-    fi
-    
-    echo ""
-    
-    cleanup_services
-    remove_service_units
-    uninstall_vector
-    remove_directories
-    verify_cleanup
-    
-    echo ""
-    echo "========================================"
-    echo "✓ Vector cleanup completed"
-    echo "========================================"
-}
+# Step 2: Uninstall Vector
+echo "🗑️  Step 2/7: Uninstalling Vector..."
 
-# Run main function
-main
+# Remove binary installed by official installer
+if [ -f "/usr/local/bin/vector" ]; then
+  echo "   Removing /usr/local/bin/vector..."
+  rm -f /usr/local/bin/vector
+  echo "   ✅ Vector binary removed"
+else
+  echo "   ℹ️  Vector binary not found"
+fi
+echo ""
+
+# Step 3: Remove configuration files
+echo "🗑️  Step 3/7: Removing configuration files..."
+
+if [ -d "/etc/vector" ]; then
+  echo "   Removing /etc/vector..."
+  rm -rf /etc/vector
+  echo "   ✅ Configuration directory removed"
+else
+  echo "   ℹ️  Configuration directory not found"
+fi
+echo ""
+
+# Step 4: Remove data directory
+echo "🗑️  Step 4/7: Removing data directory..."
+
+if [ -d "/var/lib/vector" ]; then
+  echo "   Removing /var/lib/vector..."
+  rm -rf /var/lib/vector
+  echo "   ✅ Data directory removed"
+else
+  echo "   ℹ️  Data directory not found"
+fi
+echo ""
+
+# Step 5: Remove service file
+echo "🗑️  Step 5/7: Removing systemd service file..."
+
+if [ -f "/etc/systemd/system/vector.service" ]; then
+  echo "   Removing /etc/systemd/system/vector.service..."
+  rm -f /etc/systemd/system/vector.service
+  systemctl daemon-reload
+  echo "   ✅ Service file removed"
+else
+  echo "   ℹ️  Service file not found"
+fi
+echo ""
+
+# Step 6: Remove logs
+echo "🗑️  Step 6/7: Removing logs..."
+
+# Vector logs might be in various locations
+LOG_LOCATIONS=(
+  "/var/log/vector.log"
+  "/var/log/vector"
+)
+
+REMOVED_LOGS=false
+for log_path in "${LOG_LOCATIONS[@]}"; do
+  if [ -e "$log_path" ]; then
+    echo "   Removing $log_path..."
+    rm -rf "$log_path"
+    REMOVED_LOGS=true
+  fi
+done
+
+if [ "$REMOVED_LOGS" = true ]; then
+  echo "   ✅ Logs removed"
+else
+  echo "   ℹ️  No logs found"
+fi
+echo ""
+
+# Step 7: Final verification
+echo "🔍 Step 7/7: Final verification..."
+
+# Verification
+echo ""
+echo "========================================"
+echo "✅ Cleanup Complete!"
+echo "========================================"
+echo ""
+echo "Verification:"
+
+# Check if Vector binary exists
+if command -v vector &> /dev/null; then
+  echo "  ⚠️  Vector binary still found: $(which vector)" 
+else
+  echo "  ✅ Vector binary: Not found"
+fi
+
+# Check if service exists
+if systemctl list-unit-files | grep -q "vector.service"; then
+  echo "  ⚠️  Vector service still exists"
+else
+  echo "  ✅ Vector service: Not found"
+fi
+
+# Check if config exists
+if [ -d "/etc/vector" ]; then
+  echo "  ⚠️  Configuration directory still exists"
+else
+  echo "  ✅ Configuration directory: Not found"
+fi
+
+# Check if data directory exists
+if [ -d "/var/lib/vector" ]; then
+  echo "  ⚠️  Data directory still exists"
+else
+  echo "  ✅ Data directory: Not found"
+fi
+
+echo ""
+echo "Vector has been successfully uninstalled from this system."
+echo ""

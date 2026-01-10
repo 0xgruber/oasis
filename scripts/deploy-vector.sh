@@ -1,12 +1,11 @@
 #!/bin/bash
-# O.A.S.I.S. Vector Agent Deployment Script
+# O.A.S.I.S. Vector Agent Deployment Script (Linux)
 # 
 # This script:
-# 1. Detects OS (macOS vs Linux) and architecture
-# 2. Installs Vector (Homebrew for macOS, official installer for Linux)
-# 3. Deploys configuration, secrets, and CA certificate
-# 4. Creates system-level service (LaunchDaemon or systemd)
-# 5. Registers agent with O.A.S.I.S.
+# 1. Installs Vector using official installer (Linux only)
+# 2. Deploys configuration, secrets, and CA certificate
+# 3. Creates systemd service
+# 4. Registers agent with O.A.S.I.S.
 # 
 # Usage: sudo bash scripts/deploy-vector.sh
 
@@ -27,100 +26,61 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# Detect OS and architecture
+# Detect OS
 OS_TYPE=$(uname -s)
-ARCH=$(uname -m)
 
-echo "🔍 Detected System:"
-echo "   OS: $OS_TYPE"
-echo "   Architecture: $ARCH"
-echo ""
-
-# Get OS version
-if [ "$OS_TYPE" = "Darwin" ]; then
-  OS_VERSION=$(sw_vers -productVersion)
-elif [ "$OS_TYPE" = "Linux" ]; then
-  OS_VERSION=$(uname -r)
-else
-  echo "❌ ERROR: Unsupported OS: $OS_TYPE"
+if [ "$OS_TYPE" != "Linux" ]; then
+  echo "❌ ERROR: This script only supports Linux"
+  echo "   Detected OS: $OS_TYPE"
+  echo ""
+  echo "For Windows, use: scripts/deploy-vector.ps1"
+  echo "For macOS, see roadmap (not yet supported)"
   exit 1
 fi
+
+ARCH=$(uname -m)
+OS_VERSION=$(uname -r)
+
+echo "🔍 Detected System:"
+echo "   OS: Linux"
+echo "   Architecture: $ARCH"
+echo "   Kernel: $OS_VERSION"
+echo ""
+
+# Set paths
+VECTOR_CONFIG_DIR="/etc/vector"
+VECTOR_CONFIG="$VECTOR_CONFIG_DIR/vector.yaml"
+VECTOR_SECRETS="$VECTOR_CONFIG_DIR/secrets.json"
+VECTOR_CERTS_DIR="$VECTOR_CONFIG_DIR/certs"
+VECTOR_CA_CERT="$VECTOR_CERTS_DIR/oasis-ca.pem"
+VECTOR_DATA_DIR="/var/lib/vector"
+SERVICE_FILE="/etc/systemd/system/vector.service"
+
+echo "📁 Installation Paths:"
+echo "   Config: $VECTOR_CONFIG"
+echo "   Secrets: $VECTOR_SECRETS"
+echo "   CA Cert: $VECTOR_CA_CERT"
+echo "   Data: $VECTOR_DATA_DIR"
+echo "   Service: $SERVICE_FILE"
+echo ""
 
 # Step 1: Install Vector
 echo "📦 Step 1/8: Installing Vector..."
 
-if [ "$OS_TYPE" = "Darwin" ]; then
-  # macOS: Require Homebrew (official installer doesn't support Intel macOS)
-  echo "   Checking for Homebrew..."
-  
-  if ! command -v brew &> /dev/null; then
-    echo "   ⚠️  Homebrew not found"
-    echo ""
-    echo "   Vector's official installer does not support Intel macOS."
-    echo "   Homebrew is required for macOS installation."
-    echo "   More info: https://brew.sh"
-    echo ""
-    read -p "   Install Homebrew now? (y/N): " -n 1 -r
-    echo
-    
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      echo "   📥 Installing Homebrew..."
-      # Run Homebrew installer (will prompt for password)
-      NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-      
-      # Add Homebrew to PATH for this session
-      if [ "$ARCH" = "arm64" ]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-      else
-        eval "$(/usr/local/bin/brew shellenv)"
-      fi
-      
-      if ! command -v brew &> /dev/null; then
-        echo "   ❌ ERROR: Homebrew installation failed"
-        exit 1
-      fi
-      echo "   ✅ Homebrew installed"
-    else
-      echo "   ❌ ERROR: Cannot proceed without Homebrew"
-      exit 1
-    fi
-  else
-    echo "   ✅ Homebrew found: $(brew --version | head -n1)"
+# Check if already installed
+if command -v vector &> /dev/null; then
+  EXISTING_VERSION=$(vector --version 2>/dev/null | awk '{print $2}')
+  echo "   ⚠️  Vector already installed: $EXISTING_VERSION"
+  read -p "   Reinstall? (y/N): " -n 1 -r
+  echo
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    SKIP_INSTALL=true
   fi
-  
-  # Check if Vector already installed
-  if brew list vector &>/dev/null; then
-    EXISTING_VERSION=$(brew info --json vector | grep -o '"version":"[^"]*' | cut -d'"' -f4)
-    echo "   ⚠️  Vector already installed via Homebrew: $EXISTING_VERSION"
-    read -p "   Reinstall? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-      echo "   🔄 Reinstalling Vector..."
-      brew reinstall vector
-    fi
-  else
-    echo "   📥 Installing Vector via Homebrew..."
-    brew tap vectordotdev/brew 2>/dev/null || true
-    brew install vector
-  fi
-  
-elif [ "$OS_TYPE" = "Linux" ]; then
-  # Linux: Official installer works fine
-  # Check if already installed
-  if command -v vector &> /dev/null; then
-    EXISTING_VERSION=$(vector --version 2>/dev/null | awk '{print $2}')
-    echo "   ⚠️  Vector already installed: $EXISTING_VERSION"
-    read -p "   Reinstall? (y/N): " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-      SKIP_INSTALL=true
-    fi
-  fi
-  
-  if [ "$SKIP_INSTALL" != "true" ]; then
-    echo "   📥 Installing Vector via official installer..."
-    curl --proto '=https' --tlsv1.2 -sSfL https://sh.vector.dev | bash -s -- -y
-  fi
+fi
+
+if [ "$SKIP_INSTALL" != "true" ]; then
+  echo "   📥 Installing Vector via official installer..."
+  curl --proto '=https' --tlsv1.2 -sSfL https://sh.vector.dev | bash -s -- -y
 fi
 
 # Detect actual Vector installation location
@@ -135,32 +95,6 @@ fi
 VECTOR_VERSION=$($VECTOR_BIN --version | awk '{print $2}')
 echo "   ✅ Vector installed: $VECTOR_VERSION"
 echo "   ✅ Vector binary: $VECTOR_BIN"
-
-# Derive configuration paths from binary location
-if [ "$OS_TYPE" = "Darwin" ]; then
-  # macOS Homebrew paths
-  if [[ "$VECTOR_BIN" == "/opt/homebrew"* ]]; then
-    # Apple Silicon
-    VECTOR_CONFIG_DIR="/opt/homebrew/etc/vector"
-    VECTOR_DATA_DIR="/opt/homebrew/var/lib/vector"
-  else
-    # Intel
-    VECTOR_CONFIG_DIR="/usr/local/etc/vector"
-    VECTOR_DATA_DIR="/usr/local/var/lib/vector"
-  fi
-  SERVICE_FILE="/Library/LaunchDaemons/io.vector.agent.plist"
-elif [ "$OS_TYPE" = "Linux" ]; then
-  VECTOR_CONFIG_DIR="/etc/vector"
-  VECTOR_DATA_DIR="/var/lib/vector"
-  SERVICE_FILE="/etc/systemd/system/vector.service"
-fi
-
-VECTOR_CONFIG="$VECTOR_CONFIG_DIR/vector.yaml"
-VECTOR_SECRETS="$VECTOR_CONFIG_DIR/secrets.json"
-VECTOR_CERTS_DIR="$VECTOR_CONFIG_DIR/certs"
-VECTOR_CA_CERT="$VECTOR_CERTS_DIR/oasis-ca.pem"
-
-echo "   ✅ Config directory: $VECTOR_CONFIG_DIR"
 echo ""
 
 # Step 2: Create directories
@@ -226,95 +160,7 @@ echo ""
 # Step 5: Deploy Vector configuration
 echo "⚙️  Step 5/8: Deploying Vector configuration..."
 
-if [ "$OS_TYPE" = "Darwin" ]; then
-  # macOS configuration (YAML)
-  cat > "$VECTOR_CONFIG" <<EOF
-# Vector Configuration: macOS Unified Log - PRODUCTION
-# Managed by O.A.S.I.S. deployment script
-# Generated: $(date)
-
-# Secrets backend
-secret:
-  oasis_secrets:
-    type: file
-    path: $VECTOR_SECRETS
-
-# Data source: macOS Unified Log
-sources:
-  macos_log:
-    type: exec
-    mode: scheduled
-    scheduled:
-      exec_interval_secs: 60
-    command:
-      - log
-      - show
-      - --style
-      - json
-      - --predicate
-      - eventType == logEvent OR eventType == activityCreateEvent
-      - --last
-      - 1m
-
-# Transform: Parse and enrich
-transforms:
-  parse_macos_log:
-    type: remap
-    inputs:
-      - macos_log
-    source: |
-      parsed, err = parse_json(.message)
-      if err == null {
-        .timestamp = parsed.timestamp
-        .subsystem = parsed.subsystem
-        .category = parsed.category
-        .message_text = parsed.eventMessage
-        .log_type = parsed.messageType
-        .process = parsed.processImagePath
-      }
-      .host, _ = get_hostname()
-      .oasis_tenant = "internal"
-      .source_type = "macos_unified_log"
-
-  filter_noise:
-    type: filter
-    inputs:
-      - parse_macos_log
-    condition: |
-      .subsystem != "com.apple.system.logger" && 
-      .log_type != "debug"
-
-# Sink: O.A.S.I.S. Internal Gateway
-sinks:
-  oasis_gateway:
-    type: http
-    inputs:
-      - filter_noise
-    uri: $OASIS_GATEWAY/api/v1/ingest
-    method: post
-    compression: gzip
-    encoding:
-      codec: json
-    batch:
-      max_bytes: 1048576
-      timeout_secs: 5
-    request:
-      headers:
-        Authorization: "Bearer SECRET[oasis_secrets.oasis_api_key]"
-        Content-Type: "application/json"
-    tls:
-      ca_file: $VECTOR_CA_CERT
-      verify_certificate: true
-      verify_hostname: true
-    buffer:
-      type: disk
-      max_size: 268435488
-      when_full: block
-EOF
-
-elif [ "$OS_TYPE" = "Linux" ]; then
-  # Linux configuration (YAML - converted from TOML for consistency)
-  cat > "$VECTOR_CONFIG" <<EOF
+cat > "$VECTOR_CONFIG" <<EOF
 # Vector Configuration: Linux Systemd Journal - PRODUCTION
 # Managed by O.A.S.I.S. deployment script
 # Generated: $(date)
@@ -379,7 +225,6 @@ sinks:
       max_size: 268435488
       when_full: block
 EOF
-fi
 
 chmod 644 "$VECTOR_CONFIG"
 echo "   ✅ Configuration deployed: $VECTOR_CONFIG"
@@ -395,47 +240,10 @@ else
 fi
 echo ""
 
-# Step 7: Create and start service
-echo "🚀 Step 7/8: Creating system service..."
+# Step 7: Create and start systemd service
+echo "🚀 Step 7/8: Creating systemd service..."
 
-if [ "$OS_TYPE" = "Darwin" ]; then
-  # macOS: LaunchDaemon
-  cat > "$SERVICE_FILE" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>io.vector.agent</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>$VECTOR_BIN</string>
-        <string>--config</string>
-        <string>$VECTOR_CONFIG</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>KeepAlive</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>/var/log/vector.log</string>
-    <key>StandardErrorPath</key>
-    <string>/var/log/vector.log</string>
-</dict>
-</plist>
-EOF
-  chmod 644 "$SERVICE_FILE"
-  
-  # Stop if already running
-  launchctl unload "$SERVICE_FILE" 2>/dev/null || true
-  
-  # Load and start
-  launchctl load "$SERVICE_FILE"
-  echo "   ✅ LaunchDaemon created and loaded: $SERVICE_FILE"
-  
-elif [ "$OS_TYPE" = "Linux" ]; then
-  # Linux: systemd unit
-  cat > "$SERVICE_FILE" <<EOF
+cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Vector Log Collection Agent
 Documentation=https://vector.dev/docs/
@@ -451,14 +259,15 @@ RestartSec=5s
 [Install]
 WantedBy=multi-user.target
 EOF
-  chmod 644 "$SERVICE_FILE"
-  
-  # Reload systemd and enable service
-  systemctl daemon-reload
-  systemctl enable vector.service
-  systemctl restart vector.service
-  echo "   ✅ systemd unit created and started: $SERVICE_FILE"
-fi
+
+chmod 644 "$SERVICE_FILE"
+
+# Reload systemd and enable service
+systemctl daemon-reload
+systemctl enable vector.service
+systemctl restart vector.service
+
+echo "   ✅ systemd unit created and started: $SERVICE_FILE"
 echo ""
 
 # Wait for service to start
@@ -468,23 +277,13 @@ echo ""
 
 # Step 8: Verify service is running
 echo "🔍 Step 8/8: Verifying service status..."
-if [ "$OS_TYPE" = "Darwin" ]; then
-  if launchctl list | grep -q "io.vector.agent"; then
-    echo "   ✅ Vector service is running"
-  else
-    echo "   ❌ ERROR: Vector service is not running"
-    echo "   Check logs: tail -f /var/log/vector.log"
-    exit 1
-  fi
-elif [ "$OS_TYPE" = "Linux" ]; then
-  if systemctl is-active --quiet vector.service; then
-    echo "   ✅ Vector service is running"
-    systemctl status vector.service --no-pager -l
-  else
-    echo "   ❌ ERROR: Vector service is not running"
-    echo "   Check logs: journalctl -u vector.service -n 50"
-    exit 1
-  fi
+if systemctl is-active --quiet vector.service; then
+  echo "   ✅ Vector service is running"
+  systemctl status vector.service --no-pager -l | head -10
+else
+  echo "   ❌ ERROR: Vector service is not running"
+  echo "   Check logs: journalctl -u vector.service -n 50"
+  exit 1
 fi
 echo ""
 
@@ -495,7 +294,7 @@ REGISTRATION_RESPONSE=$(curl -s -X POST "$OASIS_GATEWAY/api/v1/agents/register" 
   -H "Authorization: Bearer $OASIS_API_KEY" \
   -H "Content-Type: application/json" \
   --cacert "$VECTOR_CA_CERT" \
-  -d "{\"hostname\":\"$HOSTNAME\",\"agent_type\":\"vector\",\"os_type\":\"$OS_TYPE\",\"os_version\":\"$OS_VERSION\",\"agent_version\":\"$VECTOR_VERSION\"}" \
+  -d "{\"hostname\":\"$HOSTNAME\",\"agent_type\":\"vector\",\"os_type\":\"Linux\",\"os_version\":\"$OS_VERSION\",\"agent_version\":\"$VECTOR_VERSION\"}" \
   2>&1)
 
 if echo "$REGISTRATION_RESPONSE" | grep -q "agent_id"; then
@@ -521,17 +320,9 @@ echo "  O.A.S.I.S. Gateway: $OASIS_GATEWAY"
 echo ""
 echo "Next Steps:"
 echo "  1. Monitor logs:"
-if [ "$OS_TYPE" = "Darwin" ]; then
-  echo "     tail -f /var/log/vector.log"
-elif [ "$OS_TYPE" = "Linux" ]; then
-  echo "     journalctl -u vector.service -f"
-fi
+echo "     journalctl -u vector.service -f"
 echo "  2. Check service status:"
-if [ "$OS_TYPE" = "Darwin" ]; then
-  echo "     launchctl list | grep vector"
-elif [ "$OS_TYPE" = "Linux" ]; then
-  echo "     systemctl status vector.service"
-fi
+echo "     systemctl status vector.service"
 echo "  3. Verify logs in O.A.S.I.S. dashboard"
 echo ""
 echo "To uninstall, run: sudo bash scripts/cleanup-vector.sh"

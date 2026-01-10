@@ -2,6 +2,7 @@
 Database connection and API key validation
 """
 
+import json
 from typing import Optional
 from datetime import datetime
 
@@ -161,11 +162,16 @@ class DatabasePool:
             raise Exception("Database pool not initialized")
 
         try:
+            import json
+
             async with self.pool.acquire() as conn:
                 # Use the upsert_agent function from the database
+                # Convert metadata dict to JSON string for JSONB column
+                metadata_json = json.dumps(metadata or {})
+
                 agent_id = await conn.fetchval(
                     """
-                    SELECT upsert_agent($1, $2, $3, $4, $5, $6, $7, $8)
+                    SELECT upsert_agent($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
                     """,
                     tenant_id,
                     hostname,
@@ -174,7 +180,7 @@ class DatabasePool:
                     os_version,
                     agent_version,
                     ip_address,
-                    metadata or {},
+                    metadata_json,
                 )
 
                 logger.info(
