@@ -11,8 +11,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user
-RUN useradd -m -u 1000 api && \
+# Create non-root user and docker group
+# Use GID 985 to match host docker group for socket access
+RUN groupadd -g 985 docker && \
+    useradd -m -u 1000 -G docker api && \
     mkdir -p /app && \
     chown -R api:api /app
 
