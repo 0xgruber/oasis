@@ -1,14 +1,24 @@
 # Vector Configuration: macOS Unified Log - PRODUCTION (YAML FORMAT)
 # Collect macOS Unified Log and send to O.A.S.I.S. via HTTPS with TLS
 # 
-# Deployment Instructions:
-# 1. Install Vector: brew install vector
+# IMPORTANT: Use the automated deployment script for easiest installation:
+#   sudo bash scripts/deploy-vector.sh
+#
+# Manual deployment instructions (if not using script):
+# 1. Install Vector via Homebrew (REQUIRED for macOS - official installer doesn't support Intel Macs):
+#    brew tap vectordotdev/brew && brew install vector
 # 2. Copy this file to /opt/homebrew/etc/vector/vector.yaml (Apple Silicon)
 #    OR /usr/local/etc/vector/vector.yaml (Intel Mac)
-# 3. Copy CA certificate to /opt/homebrew/etc/vector/certs/oasis-ca.pem (Apple Silicon)
-#    OR /usr/local/etc/vector/certs/oasis-ca.pem (Intel Mac)
-# 4. Edit this file and replace the API key in the Authorization header
-# 5. Start Vector: brew services start vector
+# 3. Create secrets file at same location with: {"oasis_api_key": "your_key_here"}
+# 4. Copy CA certificate to /opt/homebrew/etc/vector/certs/oasis-ca.pem
+# 5. Create LaunchDaemon at /Library/LaunchDaemons/io.vector.agent.plist
+# 6. Load with: sudo launchctl load /Library/LaunchDaemons/io.vector.agent.plist
+
+# Secrets backend (file-based for security)
+secret:
+  oasis_secrets:
+    type: file
+    path: /usr/local/etc/vector/secrets.json  # Adjust for Apple Silicon if needed
 
 # Data source: macOS Unified Log (via `log show`)
 sources:
@@ -71,10 +81,10 @@ sinks:
       max_bytes: 1048576  # 1MB
       timeout_secs: 5
     
-    # Authentication: Bearer token (API key)
+    # Authentication: Bearer token from secrets file
     request:
       headers:
-        Authorization: "Bearer oasis_pk_FfCjHivG-Q-QN2lBD7Dl6-YQtoPaPnKEJsqXVLEkWwo"
+        Authorization: "Bearer SECRET[oasis_secrets.oasis_api_key]"
         Content-Type: "application/json"
     
     # TLS: Verify O.A.S.I.S. CA certificate

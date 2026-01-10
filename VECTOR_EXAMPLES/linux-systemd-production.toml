@@ -1,12 +1,22 @@
 # Vector Configuration: Linux Systemd Journal - PRODUCTION
 # Collect systemd journal logs and send to O.A.S.I.S. via HTTPS with TLS
 # 
-# Deployment Instructions:
-# 1. Install Vector: https://vector.dev/docs/setup/installation/
-# 2. Copy this file to /etc/vector/vector.toml
-# 3. Copy CA certificate to /etc/vector/certs/oasis-ca.pem
-# 4. Set environment variable: export OASIS_API_KEY="oasis_pk_FfCjHivG-Q-QN2lBD7Dl6-YQtoPaPnKEJsqXVLEkWwo"
-# 5. Restart Vector: systemctl restart vector
+# IMPORTANT: Use the automated deployment script for easiest installation:
+#   sudo bash scripts/deploy-vector.sh
+#
+# Manual deployment instructions (if not using script):
+# 1. Install Vector via official installer:
+#    curl --proto '=https' --tlsv1.2 -sSfL https://sh.vector.dev | bash
+# 2. Copy this file to /etc/vector/vector.yaml
+# 3. Create secrets file at /etc/vector/secrets.json with: {"oasis_api_key": "your_key_here"}
+# 4. Copy CA certificate to /etc/vector/certs/oasis-ca.pem
+# 5. Create systemd unit at /etc/systemd/system/vector.service
+# 6. Enable with: sudo systemctl enable --now vector.service
+
+# Secrets backend (file-based for security)
+[secret.oasis_secrets]
+type = "file"
+path = "/etc/vector/secrets.json"
 
 # Data source: Systemd journal (ALL services)
 [sources.journald]
@@ -45,9 +55,9 @@ encoding.codec = "json"
 batch.max_bytes = 1048576  # 1MB
 batch.timeout_secs = 5
 
-# Authentication: Bearer token (API key)
+# Authentication: Bearer token from secrets file
 [sinks.oasis_gateway.request.headers]
-Authorization = "Bearer ${OASIS_API_KEY}"
+Authorization = "Bearer SECRET[oasis_secrets.oasis_api_key]"
 Content-Type = "application/json"
 
 # TLS: Verify O.A.S.I.S. CA certificate
