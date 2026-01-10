@@ -151,10 +151,39 @@ async def ingest_logs(request: IngestRequest) -> IngestResponse:
 
 if __name__ == "__main__":
     import uvicorn
+    import os
 
-    uvicorn.run(
-        "src.main:app",
-        host="0.0.0.0",
-        port=8080,
-        log_level=settings.LOG_LEVEL.lower(),
-    )
+    # TLS/HTTPS configuration with mTLS
+    ssl_certfile = settings.MTLS_CERT_PATH if os.path.exists(settings.MTLS_CERT_PATH) else None
+    ssl_keyfile = settings.MTLS_KEY_PATH if os.path.exists(settings.MTLS_KEY_PATH) else None
+    ssl_ca_certs = settings.MTLS_CA_PATH if os.path.exists(settings.MTLS_CA_PATH) else None
+
+    if ssl_certfile and ssl_keyfile and ssl_ca_certs:
+        logger.info(
+            "ingestion_starting_https_mtls",
+            cert_path=ssl_certfile,
+            ca_path=ssl_ca_certs,
+        )
+        uvicorn.run(
+            "src.main:app",
+            host="0.0.0.0",
+            port=8080,
+            log_level=settings.LOG_LEVEL.lower(),
+            ssl_certfile=ssl_certfile,
+            ssl_keyfile=ssl_keyfile,
+            ssl_ca_certs=ssl_ca_certs,
+            ssl_cert_reqs=2,  # ssl.CERT_REQUIRED - require client certificate
+        )
+    else:
+        logger.warning(
+            "ingestion_starting_http_no_certs",
+            cert_path=ssl_certfile,
+            key_path=ssl_keyfile,
+            ca_path=ssl_ca_certs,
+        )
+        uvicorn.run(
+            "src.main:app",
+            host="0.0.0.0",
+            port=8080,
+            log_level=settings.LOG_LEVEL.lower(),
+        )

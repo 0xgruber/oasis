@@ -127,6 +127,155 @@ class DatabasePool:
             logger.error("api_key_validation_error", error=str(e))
             return None
 
+    async def upsert_agent(
+        self,
+        tenant_id: str,
+        hostname: str,
+        agent_type: str,
+        os_type: str,
+        os_version: Optional[str] = None,
+        agent_version: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        metadata: Optional[dict] = None,
+    ) -> str:
+        """
+        Register or update an agent
+
+        Args:
+            tenant_id: UUID of the tenant
+            hostname: Hostname of the agent
+            agent_type: Type of agent (e.g., 'vector')
+            os_type: Operating system type (e.g., 'linux', 'macos')
+            os_version: Optional OS version
+            agent_version: Optional agent version
+            ip_address: Optional IP address
+            metadata: Optional additional metadata
+
+        Returns:
+            UUID of the agent
+
+        Raises:
+            Exception: If database operation fails
+        """
+        if not self.pool:
+            raise Exception("Database pool not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                # Use the upsert_agent function from the database
+                agent_id = await conn.fetchval(
+                    """
+                    SELECT upsert_agent($1, $2, $3, $4, $5, $6, $7, $8)
+                    """,
+                    tenant_id,
+                    hostname,
+                    agent_type,
+                    os_type,
+                    os_version,
+                    agent_version,
+                    ip_address,
+                    metadata or {},
+                )
+
+                logger.info(
+                    "agent_upserted",
+                    agent_id=str(agent_id),
+                    tenant_id=tenant_id,
+                    hostname=hostname,
+                )
+
+                return str(agent_id)
+
+        except Exception as e:
+            logger.error(
+                "agent_upsert_failed",
+                tenant_id=tenant_id,
+                hostname=hostname,
+                error=str(e),
+            )
+            raise
+
+    async def list_agents(
+        self,
+        tenant_id: str,
+        active_only: bool = True,
+    ) -> list:
+        """
+        List all agents for a tenant
+
+        Args:
+            tenant_id: UUID of the tenant
+            active_only: If True, only return agents seen in the last 15 minutes
+
+        Returns:
+            List of agent dictionaries
+
+        Raises:
+            Exception: If database operation fails
+        """
+        if not self.pool:
+            raise Exception("Database pool not initialized")
+
+        try:
+            async with self.pool.acquire() as conn:
+                query = """
+                    SELECT 
+                        id,
+                        hostname,
+                        agent_type,
+                        os_type,
+                        os_version,
+                        agent_version,
+                        first_seen,
+                        last_seen,
+                        ip_address,
+                        metadata,
+                        is_active
+                    FROM agents
+                    WHERE tenant_id = $1
+                """
+
+                if active_only:
+                    query += " AND is_active = true"
+
+                query += " ORDER BY last_seen DESC"
+
+                rows = await conn.fetch(query, tenant_id)
+
+                agents = [
+                    {
+                        "id": str(row["id"]),
+                        "hostname": row["hostname"],
+                        "agent_type": row["agent_type"],
+                        "os_type": row["os_type"],
+                        "os_version": row["os_version"],
+                        "agent_version": row["agent_version"],
+                        "first_seen": row["first_seen"].isoformat(),
+                        "last_seen": row["last_seen"].isoformat(),
+                        "ip_address": str(row["ip_address"]) if row["ip_address"] else None,
+                        "metadata": row["metadata"],
+                        "is_active": row["is_active"],
+                    }
+                    for row in rows
+                ]
+
+                logger.info(
+                    "agents_listed",
+                    tenant_id=tenant_id,
+                    count=len(agents),
+                    active_only=active_only,
+                )
+
+                return agents
+
+        except Exception as e:
+            logger.error(
+                "agent_list_failed",
+                tenant_id=tenant_id,
+                error=str(e),
+            )
+            raise
+
 
 # Global database pool instance
 db_pool = DatabasePool()

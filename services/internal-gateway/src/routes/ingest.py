@@ -3,6 +3,8 @@ HTTP/JSON log ingestion endpoint
 """
 
 from typing import List, Dict, Any
+import ssl
+import os
 
 import structlog
 from fastapi import APIRouter, Request, Depends, HTTPException, status
@@ -69,14 +71,46 @@ async def ingest_logs(
     )
 
     # TODO: Implement rate limiting based on tenant EPS limit
-    # TODO: For Phase 1A, mTLS is disabled. Enable in Phase 1B.
 
     try:
-        # Forward to ingestion service (without mTLS for Phase 1A)
-        async with httpx.AsyncClient(verify=False) as client:
+        # Create SSL context for mTLS
+        ssl_context = None
+        if all(
+            [
+                os.path.exists(settings.MTLS_CERT_PATH),
+                os.path.exists(settings.MTLS_KEY_PATH),
+                os.path.exists(settings.MTLS_CA_PATH),
+            ]
+        ):
+            ssl_context = ssl.create_default_context(
+                purpose=ssl.Purpose.SERVER_AUTH,
+                cafile=settings.MTLS_CA_PATH,
+            )
+            ssl_context.load_cert_chain(
+                certfile=settings.MTLS_CERT_PATH,
+                keyfile=settings.MTLS_KEY_PATH,
+            )
+            ssl_context.check_hostname = True
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+
+            ingestion_url = settings.INGESTION_SERVICE_URL
+            logger.debug(
+                "using_mtls_for_ingestion",
+                url=ingestion_url,
+                tenant_id=tenant_id,
+            )
+        else:
+            ingestion_url = settings.INGESTION_SERVICE_URL.replace("https://", "http://")
+            logger.warning(
+                "mtls_certs_not_found_using_http",
+                cert_path=settings.MTLS_CERT_PATH,
+                tenant_id=tenant_id,
+            )
+
+        # Forward to ingestion service
+        async with httpx.AsyncClient(verify=ssl_context or False) as client:
             response = await client.post(
-                # Use HTTP instead of HTTPS for Phase 1A (no mTLS yet)
-                f"http://ingestion-service:8080/ingest",
+                f"{ingestion_url}/ingest",
                 json={
                     "tenant_id": tenant_id,
                     "logs": [log.model_dump() for log in batch.logs],

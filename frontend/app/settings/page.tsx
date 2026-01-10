@@ -91,9 +91,8 @@ export default function SettingsPage() {
         throw new Error('No authentication token found');
       }
 
-      const updates: { email?: string; username?: string } = {};
+      const updates: { email?: string } = {};
       if (email !== profile?.email) updates.email = email;
-      if (username !== profile?.username) updates.username = username;
 
       if (Object.keys(updates).length === 0) {
         setProfileError('No changes to save');
@@ -115,7 +114,7 @@ export default function SettingsPage() {
       }
 
       const data = await response.json();
-      setProfile({ ...profile!, email: data.email, username: data.username });
+      setProfile({ ...profile!, email: data.email });
       setProfileSuccess('Profile updated successfully');
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : 'Failed to update profile');
@@ -182,7 +181,7 @@ export default function SettingsPage() {
 
   return (
     <ProtectedRoute>
-      <div className="space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <div className={cardClass}>
           <div className="flex items-center justify-between">
@@ -236,15 +235,18 @@ export default function SettingsPage() {
                   <input
                     type="text"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full px-4 py-2 rounded"
+                    disabled
+                    className="w-full px-4 py-2 rounded opacity-60 cursor-not-allowed"
                     style={{
                       background: 'rgba(0, 0, 0, 0.3)',
-                      color: 'var(--text-primary)',
-                      border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.3)' : '1px solid rgba(100, 116, 139, 0.5)',
+                      color: 'var(--text-secondary)',
+                      border: '1px solid rgba(100, 116, 139, 0.3)',
                     }}
                     required
                   />
+                  <p className="mt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    Username cannot be changed after account creation
+                  </p>
                 </div>
 
                 <div>
@@ -396,6 +398,43 @@ export default function SettingsPage() {
                   {passwordUpdating ? 'Changing...' : 'Change Password'}
                 </button>
               </form>
+            </div>
+
+            {/* Multi-Factor Authentication */}
+            <div className={cardClass}>
+              <h2 className="text-xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
+                Multi-Factor Authentication
+              </h2>
+              
+              <div className="space-y-4">
+                <div className="flex items-center justify-between p-4 rounded" style={{ background: 'rgba(0, 0, 0, 0.2)', border: '1px solid rgba(100, 116, 139, 0.3)' }}>
+                  <div>
+                    <p className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                      MFA Status
+                    </p>
+                    <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+                      Enhance your account security with multi-factor authentication
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded text-sm" style={{ background: 'rgba(156, 163, 175, 0.2)', color: '#9ca3af' }}>
+                      Disabled
+                    </span>
+                  </div>
+                </div>
+                
+                <button
+                  disabled
+                  className="px-6 py-2 rounded font-medium opacity-50 cursor-not-allowed"
+                  style={{
+                    background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.1)' : 'rgba(59, 130, 246, 0.3)',
+                    color: theme === 'cyber' ? 'var(--cyber-green)' : '#60a5fa',
+                    border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.3)' : '1px solid rgba(59, 130, 246, 0.5)',
+                  }}
+                >
+                  Enable MFA (Coming Soon)
+                </button>
+              </div>
             </div>
 
             {/* Account Information (Read-only) */}

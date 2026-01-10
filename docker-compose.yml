@@ -59,14 +59,14 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-gateway_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - INGESTION_SERVICE_URL=https://ingestion-service:8080
-      - MTLS_CERT_PATH=/certs/gateway.crt
-      - MTLS_KEY_PATH=/certs/gateway.key
-      - MTLS_CA_PATH=/certs/ca.crt
+      - MTLS_CERT_PATH=/certs/gateway/gateway.crt
+      - MTLS_KEY_PATH=/certs/gateway/gateway.key
+      - MTLS_CA_PATH=/certs/ca/oasis-ca.crt
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - ./infrastructure/certificates:/certs:ro
+      - ./infrastructure/certs-new:/certs:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -107,14 +107,14 @@ services:
       - POSTGRES_USER=${POSTGRES_USER:-gateway_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
       - INGESTION_SERVICE_URL=https://ingestion-service:8080
-      - MTLS_CERT_PATH=/certs/gateway.crt
-      - MTLS_KEY_PATH=/certs/gateway.key
-      - MTLS_CA_PATH=/certs/ca.crt
+      - MTLS_CERT_PATH=/certs/gateway/gateway.crt
+      - MTLS_KEY_PATH=/certs/gateway/gateway.key
+      - MTLS_CA_PATH=/certs/ca/oasis-ca.crt
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - ./infrastructure/certificates:/certs:ro
+      - ./infrastructure/certs-new:/certs:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -188,16 +188,16 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-oasis}
       - POSTGRES_USER=${POSTGRES_USER:-ingestion_user}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - MTLS_CERT_PATH=/certs/ingestion.crt
-      - MTLS_KEY_PATH=/certs/ingestion.key
-      - MTLS_CA_PATH=/certs/ca.crt
+      - MTLS_CERT_PATH=/certs/ingestion/ingestion.crt
+      - MTLS_KEY_PATH=/certs/ingestion/ingestion.key
+      - MTLS_CA_PATH=/certs/ca/oasis-ca.crt
       - BATCH_SIZE=${BATCH_SIZE:-1000}
       - BATCH_TIMEOUT_SECONDS=${BATCH_TIMEOUT_SECONDS:-5}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
-      - ./infrastructure/certificates:/certs:ro
+      - ./infrastructure/certs-new:/certs:ro
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "-k", "https://localhost:8080/health"]
       interval: 10s
       timeout: 5s
       retries: 3

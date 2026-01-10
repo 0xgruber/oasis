@@ -1,7 +1,7 @@
 FROM python:3.11-slim as base
 
-LABEL org.opencontainers.image.title="O.A.S.I.S. External Gateway"
-LABEL org.opencontainers.image.description="DMZ internet-facing log ingestion gateway"
+LABEL org.opencontainers.image.title="O.A.S.I.S. Internal Gateway"
+LABEL org.opencontainers.image.description="Corporate network log ingestion gateway"
 LABEL org.opencontainers.image.authors="Aaron Gruber"
 LABEL org.opencontainers.image.source="https://github.com/0xgruber/oasis"
 LABEL org.opencontainers.image.licenses="MIT"
@@ -39,6 +39,10 @@ RUN poetry install --no-root --only main && \
 
 # Copy application code
 COPY --chown=gateway:gateway src/ ./src/
+COPY --chown=gateway:gateway start.sh ./start.sh
+
+# Make startup script executable
+RUN chmod +x ./start.sh
 
 # Switch to non-root user
 USER gateway
@@ -46,9 +50,9 @@ USER gateway
 # Expose ports
 EXPOSE 443 514 6514
 
-# Health check
+# Health check - try HTTPS first, fallback to HTTP
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=30s \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f -k https://localhost:8000/health || curl -f http://localhost:8000/health || exit 1
 
-# Run application
-CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run application via startup script
+CMD ["./start.sh"]

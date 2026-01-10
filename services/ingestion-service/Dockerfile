@@ -39,6 +39,10 @@ RUN poetry install --no-root --only main && \
 
 # Copy application code
 COPY --chown=ingestion:ingestion src/ ./src/
+COPY --chown=ingestion:ingestion start.sh ./start.sh
+
+# Make startup script executable
+RUN chmod +x ./start.sh
 
 # Switch to non-root user
 USER ingestion
@@ -46,9 +50,9 @@ USER ingestion
 # Expose port
 EXPOSE 8080
 
-# Health check
+# Health check - use -k flag for self-signed certs
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 --start-period=30s \
-    CMD curl -f http://localhost:8080/health || exit 1
+    CMD curl -f -k https://localhost:8080/health || exit 1
 
-# Run application
-CMD ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Run application via startup script
+CMD ["./start.sh"]

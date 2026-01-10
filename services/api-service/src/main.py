@@ -19,6 +19,7 @@ import clickhouse_connect
 from src.config import settings
 from src.auth import verify_password, create_access_token, decode_access_token
 from src.docker_client import get_service_status
+from src.email_service import get_email_service
 
 logger = structlog.get_logger()
 
@@ -153,6 +154,102 @@ class ChangePasswordRequest(BaseModel):
 
 
 class ChangePasswordResponse(BaseModel):
+    message: str
+
+
+class GlobalMessageRequest(BaseModel):
+    message: str
+    enabled: bool = True
+
+
+class GlobalMessageResponse(BaseModel):
+    message: str
+    enabled: bool
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class SMTPConfigRequest(BaseModel):
+    enabled: bool = False
+    host: str
+    port: int = 587
+    use_tls: bool = True
+    use_ssl: bool = False
+    username: str
+    password: Optional[str] = None  # Optional for updates (only update if provided)
+    from_email: str
+    from_name: str = "O.A.S.I.S. Security Platform"
+
+
+class SMTPConfigResponse(BaseModel):
+    enabled: bool
+    host: str
+    port: int
+    use_tls: bool
+    use_ssl: bool
+    username: str
+    password_set: bool  # Don't expose actual password
+    from_email: str
+    from_name: str
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class TestEmailRequest(BaseModel):
+    recipient: str
+
+
+class TestEmailResponse(BaseModel):
+    success: bool
+    message: str
+
+
+# User Management Models
+class UserResponse(BaseModel):
+    id: str
+    username: str
+    email: str
+    role: str
+    is_active: bool
+    tenant_id: Optional[str] = None
+    created_at: str
+    updated_at: str
+    last_login_at: Optional[str] = None
+
+
+class UserListResponse(BaseModel):
+    users: List[UserResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    role: str = "viewer"  # Default role
+    is_active: bool = True
+
+
+class InviteUserRequest(BaseModel):
+    username: str
+    email: str
+    role: str = "viewer"  # Default role
+
+
+class UpdateUserRequest(BaseModel):
+    email: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class ResetPasswordRequest(BaseModel):
+    user_id: str
+
+
+class ResetPasswordResponse(BaseModel):
+    success: bool
     message: str
 
 
@@ -455,6 +552,1048 @@ async def change_password(
         )
 
         return ChangePasswordResponse(message="Password changed successfully")
+
+
+@app.get("/system/message", response_model=GlobalMessageResponse)
+async def get_global_message(current_user: dict = Depends(get_current_user)):
+    """
+    Get the global message configuration
+
+    Returns the global message that should be displayed to all users.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    async with pg_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT value, updated_at, updated_by
+            FROM system_config
+            WHERE key = 'global_message'
+            """
+        )
+
+        if not row:
+            # Return default empty message if not configured
+            return GlobalMessageResponse(
+                message="",
+                enabled=False,
+                updated_at=None,
+                updated_by=None,
+            )
+
+        value = row["value"]
+        # Parse JSON if it's a string
+        if isinstance(value, str):
+            value = json.loads(value)
+
+        return GlobalMessageResponse(
+            message=value.get("message", ""),
+            enabled=value.get("enabled", False),
+            updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
+            updated_by=str(row["updated_by"]) if row["updated_by"] else None,
+        )
+
+
+@app.put("/system/message", response_model=GlobalMessageResponse)
+async def update_global_message(
+    request: GlobalMessageRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update the global message configuration
+
+    Only admin users can update the global message.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can update the global message",
+        )
+
+    async with pg_pool.acquire() as conn:
+        # Upsert the global message
+        await conn.execute(
+            """
+            INSERT INTO system_config (key, value, description, updated_by)
+            VALUES ('global_message', $1::jsonb, 'Global message displayed to all users', $2)
+            ON CONFLICT (key)
+            DO UPDATE SET
+                value = EXCLUDED.value,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+            """,
+            json.dumps({"message": request.message, "enabled": request.enabled}),
+            current_user["user_id"],
+        )
+
+        # Fetch updated row
+        row = await conn.fetchrow(
+            """
+            SELECT value, updated_at, updated_by
+            FROM system_config
+            WHERE key = 'global_message'
+            """
+        )
+
+        logger.info(
+            "global_message_updated",
+            user_id=current_user["user_id"],
+            enabled=request.enabled,
+        )
+
+        value = row["value"]
+        # Parse JSON if it's a string
+        if isinstance(value, str):
+            value = json.loads(value)
+
+        return GlobalMessageResponse(
+            message=value.get("message", ""),
+            enabled=value.get("enabled", False),
+            updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
+            updated_by=str(row["updated_by"]) if row["updated_by"] else None,
+        )
+
+
+@app.get("/system/smtp", response_model=SMTPConfigResponse)
+async def get_smtp_config(current_user: dict = Depends(get_current_user)):
+    """
+    Get SMTP configuration
+
+    Only admin users can view SMTP configuration.
+    Password is never returned, only password_set boolean.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can view SMTP configuration",
+        )
+
+    async with pg_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT value, updated_at, updated_by
+            FROM system_config
+            WHERE key = 'smtp_config'
+            """
+        )
+
+        if not row:
+            # Return default empty config if not configured
+            return SMTPConfigResponse(
+                enabled=False,
+                host="",
+                port=587,
+                use_tls=True,
+                use_ssl=False,
+                username="",
+                password_set=False,
+                from_email="",
+                from_name="O.A.S.I.S. Security Platform",
+                updated_at=None,
+                updated_by=None,
+            )
+
+        value = row["value"]
+        # Parse JSON if it's a string
+        if isinstance(value, str):
+            value = json.loads(value)
+
+        return SMTPConfigResponse(
+            enabled=value.get("enabled", False),
+            host=value.get("host", ""),
+            port=value.get("port", 587),
+            use_tls=value.get("use_tls", True),
+            use_ssl=value.get("use_ssl", False),
+            username=value.get("username", ""),
+            password_set=bool(value.get("password")),
+            from_email=value.get("from_email", ""),
+            from_name=value.get("from_name", "O.A.S.I.S. Security Platform"),
+            updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
+            updated_by=str(row["updated_by"]) if row["updated_by"] else None,
+        )
+
+
+@app.put("/system/smtp", response_model=SMTPConfigResponse)
+async def update_smtp_config(
+    request: SMTPConfigRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update SMTP configuration
+
+    Only admin users can update SMTP configuration.
+    Password is stored securely and never returned in responses.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can update SMTP configuration",
+        )
+
+    async with pg_pool.acquire() as conn:
+        # Get existing config to preserve password if not updating
+        existing_row = await conn.fetchrow(
+            "SELECT value FROM system_config WHERE key = 'smtp_config'"
+        )
+
+        existing_password = None
+        if existing_row:
+            existing_value = existing_row["value"]
+            if isinstance(existing_value, str):
+                existing_value = json.loads(existing_value)
+            existing_password = existing_value.get("password")
+
+        # Use provided password or keep existing
+        password_to_store = request.password if request.password else existing_password
+
+        # Build config object
+        config = {
+            "enabled": request.enabled,
+            "host": request.host,
+            "port": request.port,
+            "use_tls": request.use_tls,
+            "use_ssl": request.use_ssl,
+            "username": request.username,
+            "password": password_to_store,
+            "from_email": request.from_email,
+            "from_name": request.from_name,
+        }
+
+        # Upsert the SMTP config
+        await conn.execute(
+            """
+            INSERT INTO system_config (key, value, description, updated_by)
+            VALUES ('smtp_config', $1::jsonb, 'SMTP email server configuration', $2)
+            ON CONFLICT (key)
+            DO UPDATE SET
+                value = EXCLUDED.value,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+            """,
+            json.dumps(config),
+            current_user["user_id"],
+        )
+
+        # Fetch updated row
+        row = await conn.fetchrow(
+            """
+            SELECT value, updated_at, updated_by
+            FROM system_config
+            WHERE key = 'smtp_config'
+            """
+        )
+
+        logger.info(
+            "smtp_config_updated",
+            user_id=current_user["user_id"],
+            host=request.host,
+            enabled=request.enabled,
+        )
+
+        value = row["value"]
+        if isinstance(value, str):
+            value = json.loads(value)
+
+        return SMTPConfigResponse(
+            enabled=value.get("enabled", False),
+            host=value.get("host", ""),
+            port=value.get("port", 587),
+            use_tls=value.get("use_tls", True),
+            use_ssl=value.get("use_ssl", False),
+            username=value.get("username", ""),
+            password_set=bool(value.get("password")),
+            from_email=value.get("from_email", ""),
+            from_name=value.get("from_name", "O.A.S.I.S. Security Platform"),
+            updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
+            updated_by=str(row["updated_by"]) if row["updated_by"] else None,
+        )
+
+
+@app.post("/system/smtp/test", response_model=TestEmailResponse)
+async def test_smtp_config(
+    request: TestEmailRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Test SMTP configuration by sending a test email
+
+    Only admin users can test SMTP configuration.
+    Sends a test email to verify SMTP settings are working.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can test SMTP configuration",
+        )
+
+    try:
+        # Get email service from database config
+        email_service = await get_email_service(pg_pool)
+
+        if not email_service:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="SMTP is not configured or not enabled",
+            )
+
+        # Send test email
+        subject = "O.A.S.I.S. - SMTP Configuration Test"
+        html_body = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #0a0e27 0%, #1a237e 100%); color: #00ff9f; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f8f9fa; padding: 30px; border-radius: 0 0 8px 8px; }
+        .success { background: #d4edda; color: #155724; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>✅ SMTP Test Successful</h1>
+        </div>
+        <div class="content">
+            <h2>Configuration Test</h2>
+            <p>This is a test email from your O.A.S.I.S. platform.</p>
+            
+            <div class="success">
+                <strong>✓ Success!</strong> Your SMTP configuration is working correctly.
+            </div>
+            
+            <p>Your email system is properly configured and ready to:</p>
+            <ul>
+                <li>Send user invitation emails</li>
+                <li>Send password reset emails</li>
+                <li>Send system notifications</li>
+            </ul>
+            
+            <p>You can now safely use email features in your O.A.S.I.S. deployment.</p>
+        </div>
+        <div class="footer">
+            <p>This is a test message from O.A.S.I.S. SMTP Configuration</p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+        text_body = """
+✅ SMTP Test Successful
+
+This is a test email from your O.A.S.I.S. platform.
+
+Your SMTP configuration is working correctly and ready to:
+- Send user invitation emails
+- Send password reset emails
+- Send system notifications
+
+You can now safely use email features in your O.A.S.I.S. deployment.
+
+---
+This is a test message from O.A.S.I.S. SMTP Configuration
+"""
+
+        success = email_service.send_email(
+            to_email=request.recipient,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+        )
+
+        if success:
+            logger.info(
+                "smtp_test_successful",
+                user_id=current_user["user_id"],
+                recipient=request.recipient,
+            )
+            return TestEmailResponse(
+                success=True,
+                message=f"Test email sent successfully to {request.recipient}",
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to send test email. Check SMTP configuration and logs.",
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "smtp_test_failed",
+            error=str(e),
+            user_id=current_user["user_id"],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"SMTP test failed: {str(e)}",
+        )
+
+
+@app.get("/users", response_model=UserListResponse)
+async def list_users(
+    limit: int = 100,
+    offset: int = 0,
+    role: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List all users (admin only)
+
+    Supports pagination and filtering by role and active status.
+    """
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can list users",
+        )
+
+    try:
+        # Build query with filters
+        query = "SELECT id, username, email, role, is_active, tenant_id, created_at, updated_at, last_login_at FROM users WHERE 1=1"
+        params = []
+        param_count = 1
+
+        if role is not None:
+            query += f" AND role = ${param_count}"
+            params.append(role)
+            param_count += 1
+
+        if is_active is not None:
+            query += f" AND is_active = ${param_count}"
+            params.append(is_active)
+            param_count += 1
+
+        query += " ORDER BY created_at DESC"
+        query += f" LIMIT ${param_count} OFFSET ${param_count + 1}"
+        params.extend([limit, offset])
+
+        async with pg_pool.acquire() as conn:
+            rows = await conn.fetch(query, *params)
+
+            # Get total count
+            count_query = "SELECT COUNT(*) FROM users WHERE 1=1"
+            count_params = []
+            if role is not None:
+                count_query += " AND role = $1"
+                count_params.append(role)
+            if is_active is not None:
+                param_num = len(count_params) + 1
+                count_query += f" AND is_active = ${param_num}"
+                count_params.append(is_active)
+
+            total = await conn.fetchval(count_query, *count_params)
+
+        users = [
+            UserResponse(
+                id=str(row["id"]),
+                username=row["username"],
+                email=row["email"],
+                role=row["role"],
+                is_active=row["is_active"],
+                tenant_id=str(row["tenant_id"]) if row["tenant_id"] else None,
+                created_at=row["created_at"].isoformat(),
+                updated_at=row["updated_at"].isoformat(),
+                last_login_at=row["last_login_at"].isoformat() if row["last_login_at"] else None,
+            )
+            for row in rows
+        ]
+
+        logger.info(
+            "users_listed",
+            count=len(users),
+            total=total,
+            user_id=current_user["user_id"],
+        )
+
+        return UserListResponse(
+            users=users,
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+
+    except Exception as e:
+        logger.error("users_list_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list users: {str(e)}",
+        )
+
+
+@app.get("/users/{user_id}", response_model=UserResponse)
+async def get_user(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get specific user details (admin only or own profile)
+    """
+    # Users can view their own profile, admins can view any profile
+    if current_user["user_id"] != user_id and current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only view your own profile",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT id, username, email, role, is_active, tenant_id, created_at, updated_at, last_login_at
+                FROM users
+                WHERE id = $1
+                """,
+                user_id,
+            )
+
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+            return UserResponse(
+                id=str(row["id"]),
+                username=row["username"],
+                email=row["email"],
+                role=row["role"],
+                is_active=row["is_active"],
+                tenant_id=str(row["tenant_id"]) if row["tenant_id"] else None,
+                created_at=row["created_at"].isoformat(),
+                updated_at=row["updated_at"].isoformat(),
+                last_login_at=row["last_login_at"].isoformat() if row["last_login_at"] else None,
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("user_fetch_failed", error=str(e), user_id=user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch user: {str(e)}",
+        )
+
+
+@app.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def create_user(
+    request: CreateUserRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Create a new user with direct password (admin only)
+
+    For inviting users via email, use POST /users/invite instead.
+    """
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can create users",
+        )
+
+    # Validate role
+    valid_roles = ["super_admin", "admin", "analyst", "viewer"]
+    if request.role not in valid_roles:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}",
+        )
+
+    try:
+        from src.auth import hash_password
+
+        password_hash = hash_password(request.password)
+
+        async with pg_pool.acquire() as conn:
+            # Check if username or email already exists
+            existing = await conn.fetchrow(
+                "SELECT id FROM users WHERE username = $1 OR email = $2",
+                request.username,
+                request.email,
+            )
+
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username or email already exists",
+                )
+
+            # Create user
+            row = await conn.fetchrow(
+                """
+                INSERT INTO users (username, email, password_hash, role, is_active)
+                VALUES ($1, $2, $3, $4, $5)
+                RETURNING id, username, email, role, is_active, tenant_id, created_at, updated_at, last_login_at
+                """,
+                request.username,
+                request.email,
+                password_hash,
+                request.role,
+                request.is_active,
+            )
+
+        logger.info(
+            "user_created",
+            user_id=str(row["id"]),
+            username=request.username,
+            role=request.role,
+            created_by=current_user["user_id"],
+        )
+
+        return UserResponse(
+            id=str(row["id"]),
+            username=row["username"],
+            email=row["email"],
+            role=row["role"],
+            is_active=row["is_active"],
+            tenant_id=str(row["tenant_id"]) if row["tenant_id"] else None,
+            created_at=row["created_at"].isoformat(),
+            updated_at=row["updated_at"].isoformat(),
+            last_login_at=None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("user_creation_failed", error=str(e), username=request.username)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create user: {str(e)}",
+        )
+
+
+@app.post("/users/invite", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+async def invite_user(
+    request: InviteUserRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Invite a new user via email (admin only)
+
+    Generates a temporary password and sends an invitation email.
+    User will need to use "Forgot Password" flow to set their own password.
+    """
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can invite users",
+        )
+
+    # Validate role
+    valid_roles = ["super_admin", "admin", "analyst", "viewer"]
+    if request.role not in valid_roles:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}",
+        )
+
+    try:
+        from src.auth import hash_password
+        import secrets
+        import string
+
+        # Generate temporary password (16 chars, alphanumeric + symbols)
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+        temp_password = "".join(secrets.choice(alphabet) for _ in range(16))
+        password_hash = hash_password(temp_password)
+
+        async with pg_pool.acquire() as conn:
+            # Check if username or email already exists
+            existing = await conn.fetchrow(
+                "SELECT id FROM users WHERE username = $1 OR email = $2",
+                request.username,
+                request.email,
+            )
+
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username or email already exists",
+                )
+
+            # Create user with temporary password
+            row = await conn.fetchrow(
+                """
+                INSERT INTO users (username, email, password_hash, role, is_active)
+                VALUES ($1, $2, $3, $4, TRUE)
+                RETURNING id, username, email, role, is_active, tenant_id, created_at, updated_at, last_login_at
+                """,
+                request.username,
+                request.email,
+                password_hash,
+                request.role,
+            )
+
+            # Get SMTP config to check if email is enabled
+            smtp_row = await conn.fetchrow(
+                "SELECT value FROM system_config WHERE key = 'smtp_config'"
+            )
+
+            smtp_enabled = False
+            if smtp_row and smtp_row["value"]:
+                smtp_config = smtp_row["value"]
+                smtp_enabled = smtp_config.get("enabled", False)
+
+            # Send invitation email if SMTP is configured
+            if smtp_enabled:
+                try:
+                    email_service = get_email_service(conn)
+                    await email_service.send_user_invite(
+                        to_email=request.email,
+                        username=request.username,
+                    )
+                    logger.info(
+                        "user_invitation_email_sent",
+                        user_id=str(row["id"]),
+                        email=request.email,
+                    )
+                except Exception as email_error:
+                    logger.error(
+                        "user_invitation_email_failed",
+                        error=str(email_error),
+                        user_id=str(row["id"]),
+                        email=request.email,
+                    )
+                    # Don't fail the whole operation if email fails
+            else:
+                logger.warning(
+                    "smtp_not_enabled",
+                    message="User created but invitation email not sent (SMTP not configured)",
+                    user_id=str(row["id"]),
+                )
+
+        logger.info(
+            "user_invited",
+            user_id=str(row["id"]),
+            username=request.username,
+            email=request.email,
+            role=request.role,
+            created_by=current_user["user_id"],
+        )
+
+        return UserResponse(
+            id=str(row["id"]),
+            username=row["username"],
+            email=row["email"],
+            role=row["role"],
+            is_active=row["is_active"],
+            tenant_id=str(row["tenant_id"]) if row["tenant_id"] else None,
+            created_at=row["created_at"].isoformat(),
+            updated_at=row["updated_at"].isoformat(),
+            last_login_at=None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("user_invitation_failed", error=str(e), username=request.username)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to invite user: {str(e)}",
+        )
+
+
+@app.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: str,
+    request: UpdateUserRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update user details (admin only)
+
+    Can update email, role, and active status.
+    """
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can update users",
+        )
+
+    # Validate role if provided
+    if request.role is not None:
+        valid_roles = ["super_admin", "admin", "analyst", "viewer"]
+        if request.role not in valid_roles:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}",
+            )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Check if user exists
+            existing = await conn.fetchrow(
+                "SELECT id FROM users WHERE id = $1",
+                user_id,
+            )
+
+            if not existing:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+            # Build update query dynamically
+            updates = []
+            params = []
+            param_count = 1
+
+            if request.email is not None:
+                updates.append(f"email = ${param_count}")
+                params.append(request.email)
+                param_count += 1
+
+            if request.role is not None:
+                updates.append(f"role = ${param_count}")
+                params.append(request.role)
+                param_count += 1
+
+            if request.is_active is not None:
+                updates.append(f"is_active = ${param_count}")
+                params.append(request.is_active)
+                param_count += 1
+
+            if not updates:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No fields to update",
+                )
+
+            # Add updated_at
+            updates.append("updated_at = NOW()")
+            params.append(user_id)
+
+            query = f"""
+                UPDATE users
+                SET {", ".join(updates)}
+                WHERE id = ${param_count}
+                RETURNING id, username, email, role, is_active, tenant_id, created_at, updated_at, last_login_at
+            """
+
+            row = await conn.fetchrow(query, *params)
+
+        logger.info(
+            "user_updated",
+            user_id=user_id,
+            updated_by=current_user["user_id"],
+            updates=request.dict(exclude_unset=True),
+        )
+
+        return UserResponse(
+            id=str(row["id"]),
+            username=row["username"],
+            email=row["email"],
+            role=row["role"],
+            is_active=row["is_active"],
+            tenant_id=str(row["tenant_id"]) if row["tenant_id"] else None,
+            created_at=row["created_at"].isoformat(),
+            updated_at=row["updated_at"].isoformat(),
+            last_login_at=row["last_login_at"].isoformat() if row["last_login_at"] else None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("user_update_failed", error=str(e), user_id=user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update user: {str(e)}",
+        )
+
+
+@app.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Delete user (admin only)
+
+    Actually deactivates the user instead of hard delete for audit purposes.
+    """
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can delete users",
+        )
+
+    # Prevent self-deletion
+    if current_user["user_id"] == user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Check if user exists
+            existing = await conn.fetchrow(
+                "SELECT id FROM users WHERE id = $1",
+                user_id,
+            )
+
+            if not existing:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+            # Soft delete (deactivate)
+            await conn.execute(
+                "UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = $1",
+                user_id,
+            )
+
+        logger.info(
+            "user_deleted",
+            user_id=user_id,
+            deleted_by=current_user["user_id"],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("user_deletion_failed", error=str(e), user_id=user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete user: {str(e)}",
+        )
+
+
+@app.post("/users/{user_id}/reset-password", response_model=ResetPasswordResponse)
+async def reset_user_password(
+    user_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Reset user password and send temporary password via email (admin only)
+
+    Generates a new temporary password and sends it via email.
+    """
+    # Check if user has admin role
+    if current_user["role"] not in ["super_admin", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can reset user passwords",
+        )
+
+    try:
+        from src.auth import hash_password
+        import secrets
+        import string
+
+        # Generate temporary password (16 chars, alphanumeric + symbols)
+        alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+        temp_password = "".join(secrets.choice(alphabet) for _ in range(16))
+        password_hash = hash_password(temp_password)
+
+        async with pg_pool.acquire() as conn:
+            # Get user details
+            user = await conn.fetchrow(
+                "SELECT username, email FROM users WHERE id = $1",
+                user_id,
+            )
+
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found",
+                )
+
+            # Update password
+            await conn.execute(
+                "UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2",
+                password_hash,
+                user_id,
+            )
+
+            # Get SMTP config
+            smtp_row = await conn.fetchrow(
+                "SELECT value FROM system_config WHERE key = 'smtp_config'"
+            )
+
+            smtp_enabled = False
+            if smtp_row and smtp_row["value"]:
+                smtp_config = smtp_row["value"]
+                smtp_enabled = smtp_config.get("enabled", False)
+
+            # Send password reset email if SMTP is configured
+            if smtp_enabled:
+                try:
+                    email_service = get_email_service(conn)
+                    await email_service.send_password_reset(
+                        to_email=user["email"],
+                        username=user["username"],
+                        temp_password=temp_password,
+                    )
+                    logger.info(
+                        "password_reset_email_sent",
+                        user_id=user_id,
+                        email=user["email"],
+                    )
+                except Exception as email_error:
+                    logger.error(
+                        "password_reset_email_failed",
+                        error=str(email_error),
+                        user_id=user_id,
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Password reset but failed to send email. Please contact support.",
+                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="SMTP is not configured. Cannot send password reset email.",
+                )
+
+        logger.info(
+            "user_password_reset",
+            user_id=user_id,
+            reset_by=current_user["user_id"],
+        )
+
+        return ResetPasswordResponse(
+            success=True,
+            message=f"Password reset email sent to {user['email']}",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("password_reset_failed", error=str(e), user_id=user_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to reset password: {str(e)}",
+        )
 
 
 @app.get("/logs", response_model=LogsResponse)
