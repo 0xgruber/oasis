@@ -13,6 +13,24 @@ interface ServiceStatus {
   state: string;
   uptime_seconds: number;
   networks: string[];
+  description?: string;
+  network_details?: Array<{
+    name: string;
+    ip_address: string;
+    gateway: string;
+  }>;
+  port_bindings?: Array<{
+    internal: string;
+    external: string | null;
+  }>;
+  mounts?: Array<{
+    type: string;
+    source: string;
+    destination: string;
+    mode: string;
+  }>;
+  image?: string;
+  env_vars?: string[];
 }
 
 export default function DashboardPage() {
@@ -21,6 +39,8 @@ export default function DashboardPage() {
   const [services, setServices] = useState<ServiceStatus[]>([]);
   const [servicesLoading, setServicesLoading] = useState(true);
   const [servicesError, setServicesError] = useState<string | null>(null);
+  const [selectedService, setSelectedService] = useState<ServiceStatus | null>(null);
+  const [showModal, setShowModal] = useState(false);
 
   // Format uptime seconds to human-readable string
   const formatUptime = (seconds: number): string => {
@@ -308,10 +328,14 @@ export default function DashboardPage() {
                       return (
                         <div
                           key={service.container}
-                          className="flex flex-col p-4 rounded"
+                          className="flex flex-col p-4 rounded cursor-pointer hover:opacity-80 transition-opacity"
                           style={{
                             background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
                             border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.2)' : '1px solid #475569'
+                          }}
+                          onClick={() => {
+                            setSelectedService(service);
+                            setShowModal(true);
                           }}
                         >
                           <div className="flex items-start justify-between mb-2">
@@ -436,6 +460,177 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Service Details Modal */}
+      {showModal && selectedService && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowModal(false)}
+        >
+          <div 
+            className="rounded-lg p-6 max-w-4xl max-h-[85vh] overflow-y-auto w-full"
+            style={{
+              background: theme === 'cyber' ? 'rgba(15, 23, 42, 0.98)' : '#1e293b',
+              border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.3)' : '1px solid #475569'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4 pb-4 border-b" style={{ borderColor: theme === 'cyber' ? 'rgba(0, 255, 159, 0.2)' : '#475569' }}>
+              <h3 className="text-2xl font-bold" style={{ color: theme === 'cyber' ? 'var(--cyber-green)' : 'var(--text-primary)' }}>
+                {selectedService.name}
+              </h3>
+              <button 
+                onClick={() => setShowModal(false)}
+                className="text-2xl hover:opacity-70 transition-opacity"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Description */}
+            {selectedService.description && (
+              <div className="mb-6">
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  {selectedService.description}
+                </p>
+              </div>
+            )}
+
+            {/* Status Section */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Status</h4>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                  <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Health</div>
+                  <div className="flex items-center">
+                    <span 
+                      className="w-2 h-2 rounded-full mr-2"
+                      style={{ background: getStatusColor(selectedService.status, selectedService.state) }}
+                    ></span>
+                    <span className="font-medium" style={{ color: getStatusColor(selectedService.status, selectedService.state) }}>
+                      {getStatusText(selectedService.status, selectedService.state)}
+                    </span>
+                  </div>
+                </div>
+                <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                  <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>State</div>
+                  <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{selectedService.state}</div>
+                </div>
+                <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                  <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Uptime</div>
+                  <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{formatUptime(selectedService.uptime_seconds)}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Network Information */}
+            {selectedService.network_details && selectedService.network_details.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Network</h4>
+                <div className="space-y-2">
+                  {selectedService.network_details.map((net) => (
+                    <div key={net.name} className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                      <div className="font-medium mb-1" style={{ color: theme === 'cyber' ? 'var(--cyber-green)' : 'var(--text-primary)' }}>
+                        {net.name.replace('oasis_', '')}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <span style={{ color: 'var(--text-secondary)' }}>IP: </span>
+                          <span style={{ color: 'var(--text-primary)' }}>{net.ip_address || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span style={{ color: 'var(--text-secondary)' }}>Gateway: </span>
+                          <span style={{ color: 'var(--text-primary)' }}>{net.gateway || 'N/A'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Port Mappings */}
+            {selectedService.port_bindings && selectedService.port_bindings.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Ports</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {selectedService.port_bindings.map((port, idx) => (
+                    <div key={idx} className="p-3 rounded text-sm" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                      {port.external ? (
+                        <span style={{ color: 'var(--text-primary)' }}>
+                          <span style={{ color: theme === 'cyber' ? 'var(--cyber-green)' : '#4ade80' }}>{port.external}</span>
+                          {' → '}
+                          <span>{port.internal}</span>
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--text-secondary)' }}>{port.internal} (exposed)</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Volume Mounts */}
+            {selectedService.mounts && selectedService.mounts.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Volumes</h4>
+                <div className="space-y-2">
+                  {selectedService.mounts.map((mount, idx) => (
+                    <div key={idx} className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                      <div className="text-sm mb-1">
+                        <span className="px-2 py-1 rounded text-xs mr-2" style={{ background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.2)' : 'rgba(100, 116, 139, 0.3)', color: theme === 'cyber' ? 'var(--cyber-green)' : 'var(--text-secondary)' }}>
+                          {mount.type}
+                        </span>
+                        {mount.mode && (
+                          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>({mount.mode})</span>
+                        )}
+                      </div>
+                      <div className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>
+                        {mount.source}
+                      </div>
+                      <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        → {mount.destination}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Container Info */}
+            <div className="mb-6">
+              <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Container</h4>
+              <div className="space-y-2">
+                <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                  <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Name</div>
+                  <div className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{selectedService.container}</div>
+                </div>
+                {selectedService.image && (
+                  <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                    <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Image</div>
+                    <div className="text-sm font-mono" style={{ color: 'var(--text-primary)' }}>{selectedService.image}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Environment Variables */}
+            {selectedService.env_vars && selectedService.env_vars.length > 0 && (
+              <div className="mb-6">
+                <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Environment Variables</h4>
+                <div className="p-3 rounded overflow-x-auto" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                  <pre className="text-xs font-mono whitespace-pre-wrap break-all" style={{ color: 'var(--text-secondary)' }}>
+                    {selectedService.env_vars.join('\n')}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </ProtectedRoute>
   );
 }

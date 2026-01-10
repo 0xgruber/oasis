@@ -11,6 +11,18 @@ from docker.errors import DockerException
 
 logger = structlog.get_logger(__name__)
 
+# Service descriptions for each OASIS component
+SERVICE_DESCRIPTIONS = {
+    "api-service": "Query and management API with JWT authentication. Provides endpoints for log queries, tenant management, and service monitoring.",
+    "soc-portal": "Security Operations Center web interface. React-based dashboard for log analysis, alerting, and system administration.",
+    "ingestion-service": "Log ingestion and normalization service. Accepts logs via syslog/HTTP, normalizes to OCSF format, and stores in ClickHouse.",
+    "internal-gateway": "Internal network gateway for corporate log sources. Handles authentication, rate limiting, and routing to ingestion service.",
+    "external-gateway": "DMZ gateway for internet-facing log sources. First line of defense with strict rate limiting and API key authentication.",
+    "postgresql": "Relational database for tenant metadata, user accounts, API keys, and configuration data. Multi-tenant schema isolation.",
+    "clickhouse": "Columnar database for high-performance log storage and analytics. Table-per-tenant architecture for isolation and scalability.",
+    "qdrant": "Vector database for AI-powered semantic search and similarity analysis. Enables natural language log queries (Phase 3).",
+}
+
 
 def get_service_status() -> dict[str, Any]:
     """
@@ -79,13 +91,72 @@ def get_service_status() -> dict[str, Any]:
                             error=str(e),
                         )
 
-            # Get network names
+            # Get network names and details
             networks = list(container.attrs.get("NetworkSettings", {}).get("Networks", {}).keys())
+
+            # Get network details with IP addresses
+            network_details = []
+            for net_name, net_data in (
+                container.attrs.get("NetworkSettings", {}).get("Networks", {}).items()
+            ):
+                network_details.append(
+                    {
+                        "name": net_name,
+                        "ip_address": net_data.get("IPAddress", ""),
+                        "gateway": net_data.get("Gateway", ""),
+                    }
+                )
+
+            # Get port mappings
+            port_bindings = []
+            ports = container.attrs.get("NetworkSettings", {}).get("Ports", {})
+            for internal_port, bindings in ports.items() if ports else []:
+                if bindings:
+                    for binding in bindings:
+                        port_bindings.append(
+                            {
+                                "internal": internal_port,
+                                "external": f"{binding.get('HostIp', '0.0.0.0')}:{binding.get('HostPort', '')}",
+                            }
+                        )
+                else:
+                    # Port exposed but not bound
+                    port_bindings.append({"internal": internal_port, "external": None})
+
+            # Get volume mounts
+            mounts = []
+            for mount in container.attrs.get("Mounts", []):
+                mounts.append(
+                    {
+                        "type": mount.get("Type", ""),
+                        "source": mount.get("Source", ""),
+                        "destination": mount.get("Destination", ""),
+                        "mode": mount.get("Mode", ""),
+                    }
+                )
+
+            # Get container image
+            image = container.attrs.get("Config", {}).get("Image", "")
+
+            # Get environment variables (filter sensitive ones)
+            env_vars = []
+            for env in container.attrs.get("Config", {}).get("Env", []):
+                # Skip sensitive env vars
+                if any(
+                    sensitive in env.upper() for sensitive in ["PASSWORD", "SECRET", "TOKEN", "KEY"]
+                ):
+                    key = env.split("=")[0]
+                    env_vars.append(f"{key}=***")
+                else:
+                    env_vars.append(env)
 
             # Format service name for display (capitalize words, remove hyphens)
             display_name = service_name.replace("-", " ").title()
             # Fix acronyms to uppercase
             display_name = display_name.replace("Api", "API").replace("Soc", "SOC")
+
+            # Get service description
+            description = SERVICE_DESCRIPTIONS.get(service_name, "No description available")
 
             services.append(
                 {
@@ -95,6 +166,12 @@ def get_service_status() -> dict[str, Any]:
                     "state": state,
                     "uptime_seconds": uptime_seconds,
                     "networks": networks,
+                    "description": description,
+                    "network_details": network_details,
+                    "port_bindings": port_bindings,
+                    "mounts": mounts,
+                    "image": image,
+                    "env_vars": env_vars,
                 }
             )
 
