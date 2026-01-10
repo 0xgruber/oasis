@@ -21,6 +21,26 @@ Write-Host "O.A.S.I.S. Vector Agent Deployment" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+# Check prerequisites
+Write-Host "🔍 Checking prerequisites..." -ForegroundColor Yellow
+
+# Check for required PowerShell version (5.1+)
+if ($PSVersionTable.PSVersion.Major -lt 5) {
+    Write-Host "❌ ERROR: PowerShell 5.1 or higher is required" -ForegroundColor Red
+    Write-Host "   Current version: $($PSVersionTable.PSVersion)" -ForegroundColor Red
+    exit 1
+}
+
+# Check if running as Administrator (already checked by #Requires, but be explicit)
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    Write-Host "❌ ERROR: This script must be run as Administrator" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "   ✅ All prerequisites met" -ForegroundColor Green
+Write-Host ""
+
 # Detect system info
 $OS_VERSION = (Get-CimInstance Win32_OperatingSystem).Version
 $ARCH = (Get-CimInstance Win32_OperatingSystem).OSArchitecture

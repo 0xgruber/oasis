@@ -26,6 +26,31 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Check required tools
+echo "🔍 Checking prerequisites..."
+MISSING_TOOLS=()
+
+if ! command -v curl &> /dev/null; then
+  MISSING_TOOLS+=("curl")
+fi
+
+if ! command -v systemctl &> /dev/null; then
+  MISSING_TOOLS+=("systemctl")
+fi
+
+if [ ${#MISSING_TOOLS[@]} -gt 0 ]; then
+  echo "❌ ERROR: Missing required tools: ${MISSING_TOOLS[*]}"
+  echo ""
+  echo "Please install missing tools:"
+  echo "   Ubuntu/Debian: sudo apt-get update && sudo apt-get install -y curl systemd"
+  echo "   RHEL/CentOS:   sudo yum install -y curl systemd"
+  echo ""
+  exit 1
+fi
+
+echo "   ✅ All prerequisites met"
+echo ""
+
 # Detect OS
 OS_TYPE=$(uname -s)
 
