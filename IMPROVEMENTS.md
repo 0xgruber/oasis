@@ -1,6 +1,107 @@
 # Improvements Roadmap
 
-This document outlines potential improvements and features for Phase 2 and beyond.
+This document outlines potential improvements and features for Phase 1C and beyond.
+
+## Phase 1C Features
+
+### Dynamic Service Status Monitoring
+**Priority:** High  
+**Effort:** 1-2 weeks
+
+Implement real-time service health monitoring with automatic discovery of Docker containers.
+
+**Current Behavior:**
+- Dashboard shows 8 hardcoded service status cards
+- Status is always "operational" (static text)
+- No real-time health updates
+
+**Improvement:**
+
+**Backend (api-service):**
+- Add Python Docker SDK dependency (`docker` package)
+- New endpoint: `GET /api/services/status`
+- Query Docker daemon via socket (`/var/run/docker.sock`)
+- Filter containers by `com.docker.compose.project=oasis` label
+- Extract for each container:
+  - Service name (from `com.docker.compose.service` label or container name)
+  - Health status (healthy/unhealthy/starting/none)
+  - Uptime duration
+  - Container state (running/stopped/restarting)
+  - Network subnets (DMZ/Internal/Backend)
+
+**Response Format:**
+```json
+{
+  "services": [
+    {
+      "name": "Internal Gateway",
+      "container": "oasis-internal-gateway",
+      "status": "healthy",
+      "state": "running",
+      "uptime_seconds": 7200,
+      "networks": ["internal-network", "backend-network"]
+    },
+    {
+      "name": "Ingestion Service",
+      "container": "oasis-ingestion-service",
+      "status": "none",
+      "state": "stopped",
+      "uptime_seconds": 0,
+      "networks": []
+    }
+  ]
+}
+```
+
+**Frontend (soc-portal):**
+- Add `useEffect` hook to poll `/api/services/status` every 30 seconds
+- Dynamically generate status cards from API response (no hardcoded list)
+- Status color coding:
+  - **Green**: `status=healthy` and `state=running`
+  - **Yellow**: `status=starting` or `state=restarting`
+  - **Red**: `status=unhealthy` or `state=stopped/exited`
+  - **Gray**: `status=none` (no health check configured)
+- Show additional info on hover (uptime, network subnets)
+
+**Benefits:**
+- ✅ Automatic discovery: Adding new services to `docker-compose.yml` automatically adds dashboard cards
+- ✅ Real health monitoring: Uses Docker's built-in health checks (already configured)
+- ✅ No manual updates: Service list stays in sync with actual deployments
+- ✅ Network awareness: Can group/badge services by subnet (DMZ/Internal/Backend)
+- ✅ Production-ready: Foundation for multi-host monitoring (Phase 3+)
+
+**Future: Multi-Host Support (Phase 3+)**
+
+For distributed deployments across multiple Docker hosts:
+
+**Option 1: Docker Swarm Mode**
+- Built-in service discovery across nodes
+- Swarm API aggregates health from all workers
+- Labels propagate to all service replicas
+
+**Option 2: Kubernetes**
+- Labels & selectors: `app=oasis, component=gateway`
+- Service discovery via DNS and API server
+- Health via liveness/readiness probes
+
+**Option 3: Custom Agent Architecture**
+- Deploy lightweight "OASIS Agent" on each Docker host
+- Agents query local Docker daemon, report to central API
+- Central API aggregates status from all agents
+- Works with any container runtime (Docker/Podman/containerd)
+
+**Option 4: Service Mesh (Consul)**
+- Each container registers with Consul agent
+- Consul provides distributed health checks
+- Query Consul API for all services with `project=oasis` tag
+
+**Implementation Notes:**
+- Mount Docker socket in api-service container: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- Security: Socket is read-only, api-service only queries (no start/stop/delete operations)
+- Docker Compose labels are automatically added (no custom labels needed)
+- Standard label: `com.docker.compose.project=oasis`
+
+---
 
 ## Phase 2 Features
 
@@ -457,6 +558,40 @@ Vector Agent → Gateway (5ms) → Ingestion (15ms) → ClickHouse (25ms) → To
 
 ---
 
+### Mobile-Friendly SOC Portal
+**Priority:** Low  
+**Effort:** 2-3 weeks
+
+Implement responsive design for mobile and tablet devices.
+
+**Current Behavior:**
+- SOC Portal optimized for desktop browsers (1920x1080+)
+- Fixed sidebar layout breaks on mobile
+- Tables require horizontal scrolling
+- Modals may overflow small screens
+
+**Improvements:**
+- Responsive layout with breakpoints (mobile: <768px, tablet: 768-1024px, desktop: >1024px)
+- Collapsible sidebar with hamburger menu on mobile
+- Touch-friendly UI elements (larger tap targets, swipe gestures)
+- Stacked table layouts for mobile (card-based instead of table rows)
+- Modals adapt to screen size (full-screen on mobile)
+- Optimized cyber theme effects for lower-power mobile devices
+
+**Implementation:**
+- Tailwind CSS responsive utilities (sm:, md:, lg:, xl:)
+- Mobile-first CSS approach
+- Touch event handlers for swipe navigation
+- Viewport meta tag configuration
+- Progressive Web App (PWA) support (optional)
+
+**Benefits:**
+- Security analysts can monitor alerts on mobile devices
+- Improved accessibility for tablet users
+- Better incident response flexibility (on-the-go access)
+
+---
+
 ## Contribution Guidelines
 
 Have ideas for improvements? Submit a proposal:
@@ -481,6 +616,7 @@ Have ideas for improvements? Submit a proposal:
 | Rolling Cert Restart | Medium | 1-2w | Low | 2 |
 | K8s Manifests | Low | 3-4w | Medium | 2 |
 | Multi-Region | Low | 6-8w | Low | 3+ |
+| Mobile-Friendly Portal | Low | 2-3w | Low | 3+ |
 
 **Priority Calculation:**
 - High: Critical for production use or major competitive advantage

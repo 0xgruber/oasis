@@ -1,0 +1,8 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- Allow experimental JSON/Object columns for OCSF data -->
+            <allow_experimental_object_type>1</allow_experimental_object_type>
+        </default>
+    </profiles>
+</clickhouse>
