@@ -244,6 +244,8 @@ services:
       - JWT_EXPIRATION_MINUTES=60
       - TOTP_ISSUER=O.A.S.I.S.
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s

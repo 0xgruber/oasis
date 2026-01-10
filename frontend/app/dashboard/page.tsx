@@ -1,12 +1,103 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 
+interface ServiceStatus {
+  name: string;
+  container: string;
+  status: string;
+  state: string;
+  uptime_seconds: number;
+  networks: string[];
+}
+
 export default function DashboardPage() {
   const { user } = useAuth();
   const { theme } = useTheme();
+  const [services, setServices] = useState<ServiceStatus[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [servicesError, setServicesError] = useState<string | null>(null);
+
+  // Format uptime seconds to human-readable string
+  const formatUptime = (seconds: number): string => {
+    if (seconds === 0) return '0s';
+    const days = Math.floor(seconds / 86400);
+    const hours = Math.floor((seconds % 86400) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (days > 0) return `${days}d ${hours}h`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+  };
+
+  // Get status color based on health and state
+  const getStatusColor = (status: string, state: string): string => {
+    if (status === 'healthy' && state === 'running') {
+      return theme === 'cyber' ? 'var(--cyber-green)' : '#4ade80'; // green
+    }
+    if (status === 'starting' || state === 'restarting') {
+      return theme === 'cyber' ? 'var(--cyber-yellow)' : '#fbbf24'; // yellow
+    }
+    if (status === 'unhealthy' || state === 'exited' || state === 'stopped') {
+      return '#ef4444'; // red
+    }
+    return '#94a3b8'; // gray (no health check)
+  };
+
+  // Get status text
+  const getStatusText = (status: string, state: string): string => {
+    if (status === 'healthy' && state === 'running') return 'operational';
+    if (status === 'starting') return 'starting';
+    if (state === 'restarting') return 'restarting';
+    if (status === 'unhealthy') return 'unhealthy';
+    if (state === 'exited' || state === 'stopped') return 'stopped';
+    if (state === 'running') return 'running';
+    return state;
+  };
+
+  // Fetch service status
+  const fetchServiceStatus = async () => {
+    try {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        setServicesError('Not authenticated');
+        return;
+      }
+
+      const response = await fetch('/api/services/status', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      setServices(data.services || []);
+      setServicesError(null);
+    } catch (error) {
+      console.error('Failed to fetch service status:', error);
+      setServicesError(error instanceof Error ? error.message : 'Unknown error');
+    } finally {
+      setServicesLoading(false);
+    }
+  };
+
+  // Poll service status every 30 seconds
+  useEffect(() => {
+    fetchServiceStatus(); // Initial fetch
+    
+    const interval = setInterval(() => {
+      fetchServiceStatus();
+    }, 30000); // 30 seconds
+    
+    return () => clearInterval(interval);
+  }, []);
 
   const cardClass = theme === 'cyber' 
     ? 'terminal-card rounded-lg p-6' 
@@ -168,44 +259,100 @@ export default function DashboardPage() {
           >
             System Status
           </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[
-              { name: 'Internal Gateway', status: 'operational' },
-              { name: 'External Gateway', status: 'operational' },
-              { name: 'Ingestion Service', status: 'operational' },
-              { name: 'API Service', status: 'operational' },
-              { name: 'ClickHouse', status: 'operational' },
-              { name: 'PostgreSQL', status: 'operational' },
-              { name: 'Qdrant', status: 'operational' },
-              { name: 'SOC Portal', status: 'operational' },
-            ].map((service) => (
-              <div
-                key={service.name}
-                className="flex flex-col items-center justify-center p-4 rounded text-center"
-                style={{
-                  background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
-                  border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.2)' : '1px solid #475569'
-                }}
-              >
-                <span 
-                  className="font-medium mb-2"
-                  style={{ color: 'var(--text-primary)' }}
-                >
-                  {service.name}
-                </span>
-                <span className="flex items-center text-sm" style={{ color: theme === 'cyber' ? 'var(--cyber-green)' : '#4ade80' }}>
-                  <span 
-                    className="w-2 h-2 rounded-full mr-2"
-                    style={{ 
-                      background: theme === 'cyber' ? 'var(--cyber-green)' : '#4ade80',
-                      boxShadow: theme === 'cyber' ? '0 0 10px var(--cyber-green)' : undefined
+          
+          {servicesLoading ? (
+            <div className="text-center py-8" style={{ color: 'var(--text-secondary)' }}>
+              Loading service status...
+            </div>
+          ) : servicesError ? (
+            <div className="text-center py-8" style={{ color: '#ef4444' }}>
+              Failed to load services: {servicesError}
+            </div>
+          ) : services.length === 0 ? (
+            <div className="text-center py-8" style={{ color: 'var(--text-secondary)' }}>
+              No services found
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {services.map((service) => {
+                const statusColor = getStatusColor(service.status, service.state);
+                const statusText = getStatusText(service.status, service.state);
+                
+                return (
+                  <div
+                    key={service.container}
+                    className="flex flex-col p-4 rounded"
+                    style={{
+                      background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
+                      border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.2)' : '1px solid #475569'
                     }}
-                  ></span>
-                  {service.status}
-                </span>
-              </div>
-            ))}
-          </div>
+                  >
+                    <div className="flex items-start justify-between mb-2">
+                      <span 
+                        className="font-medium"
+                        style={{ color: 'var(--text-primary)' }}
+                      >
+                        {service.name}
+                      </span>
+                      <span 
+                        className="text-xs px-2 py-1 rounded"
+                        style={{ 
+                          background: 'rgba(0, 0, 0, 0.3)',
+                          color: 'var(--text-secondary)'
+                        }}
+                      >
+                        {formatUptime(service.uptime_seconds)}
+                      </span>
+                    </div>
+                    
+                    <div className="flex items-center text-sm mb-2">
+                      <span 
+                        className="w-2 h-2 rounded-full mr-2"
+                        style={{ 
+                          background: statusColor,
+                          boxShadow: theme === 'cyber' ? `0 0 10px ${statusColor}` : undefined
+                        }}
+                      ></span>
+                      <span style={{ color: statusColor }}>
+                        {statusText}
+                      </span>
+                    </div>
+                    
+                    {service.networks.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {service.networks.map((network) => {
+                          let badge = 'Backend';
+                          let badgeColor = '#6366f1'; // indigo
+                          
+                          if (network.includes('dmz')) {
+                            badge = 'DMZ';
+                            badgeColor = '#f59e0b'; // amber
+                          } else if (network.includes('internal')) {
+                            badge = 'Internal';
+                            badgeColor = '#8b5cf6'; // purple
+                          }
+                          
+                          return (
+                            <span
+                              key={network}
+                              className="text-xs px-2 py-1 rounded"
+                              style={{
+                                background: `${badgeColor}33`,
+                                color: badgeColor,
+                                border: `1px solid ${badgeColor}66`
+                              }}
+                            >
+                              {badge}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </ProtectedRoute>
