@@ -135,6 +135,27 @@ class LogsResponse(BaseModel):
     offset: int
 
 
+class UpdateProfileRequest(BaseModel):
+    email: Optional[str] = None
+    username: Optional[str] = None
+
+
+class UpdateProfileResponse(BaseModel):
+    message: str
+    user_id: str
+    email: str
+    username: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ChangePasswordResponse(BaseModel):
+    message: str
+
+
 # Dependencies
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     """Validate JWT and return current user"""
@@ -252,6 +273,188 @@ async def login(request: LoginRequest):
             tenant_id=str(row["tenant_id"]) if row["tenant_id"] else None,
             role=row["role"],
         )
+
+
+@app.get("/account/profile")
+async def get_profile(current_user: dict = Depends(get_current_user)):
+    """
+    Get current user's profile information
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    async with pg_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, tenant_id, username, email, role, created_at, last_login_at
+            FROM users
+            WHERE id = $1
+            """,
+            current_user["user_id"],
+        )
+
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return {
+            "user_id": str(row["id"]),
+            "tenant_id": str(row["tenant_id"]) if row["tenant_id"] else None,
+            "username": row["username"],
+            "email": row["email"],
+            "role": row["role"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "last_login_at": row["last_login_at"].isoformat() if row["last_login_at"] else None,
+        }
+
+
+@app.put("/account/profile", response_model=UpdateProfileResponse)
+async def update_profile(
+    request: UpdateProfileRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update current user's profile (email and/or username)
+
+    At least one field (email or username) must be provided.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Validate that at least one field is provided
+    if not request.email and not request.username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one field (email or username) must be provided",
+        )
+
+    async with pg_pool.acquire() as conn:
+        # Check if username is already taken (if provided)
+        if request.username:
+            existing = await conn.fetchrow(
+                "SELECT id FROM users WHERE username = $1 AND id != $2",
+                request.username,
+                current_user["user_id"],
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Username already taken",
+                )
+
+        # Check if email is already taken (if provided)
+        if request.email:
+            existing = await conn.fetchrow(
+                "SELECT id FROM users WHERE email = $1 AND id != $2",
+                request.email,
+                current_user["user_id"],
+            )
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Email already taken",
+                )
+
+        # Build UPDATE query dynamically based on provided fields
+        update_fields = []
+        params = []
+        param_count = 1
+
+        if request.email:
+            update_fields.append(f"email = ${param_count}")
+            params.append(request.email)
+            param_count += 1
+
+        if request.username:
+            update_fields.append(f"username = ${param_count}")
+            params.append(request.username)
+            param_count += 1
+
+        # Add user_id as last parameter
+        params.append(current_user["user_id"])
+
+        # Execute update
+        query = f"""
+            UPDATE users
+            SET {", ".join(update_fields)}
+            WHERE id = ${param_count}
+            RETURNING id, email, username
+        """
+
+        row = await conn.fetchrow(query, *params)
+
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        logger.info(
+            "user_profile_updated",
+            user_id=str(row["id"]),
+            updated_email=bool(request.email),
+            updated_username=bool(request.username),
+        )
+
+        return UpdateProfileResponse(
+            message="Profile updated successfully",
+            user_id=str(row["id"]),
+            email=row["email"],
+            username=row["username"],
+        )
+
+
+@app.put("/account/password", response_model=ChangePasswordResponse)
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Change current user's password
+
+    Requires current password for verification.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Validate password strength (basic check)
+    if len(request.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long",
+        )
+
+    async with pg_pool.acquire() as conn:
+        # Get current password hash
+        row = await conn.fetchrow(
+            "SELECT password_hash FROM users WHERE id = $1",
+            current_user["user_id"],
+        )
+
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Verify current password
+        if not verify_password(request.current_password, row["password_hash"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Current password is incorrect",
+            )
+
+        # Hash new password
+        from src.auth import hash_password
+
+        new_hash = hash_password(request.new_password)
+
+        # Update password
+        await conn.execute(
+            "UPDATE users SET password_hash = $1 WHERE id = $2",
+            new_hash,
+            current_user["user_id"],
+        )
+
+        logger.info(
+            "user_password_changed",
+            user_id=current_user["user_id"],
+        )
+
+        return ChangePasswordResponse(message="Password changed successfully")
 
 
 @app.get("/logs", response_model=LogsResponse)
