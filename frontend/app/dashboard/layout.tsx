@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import UserMenu from '@/components/UserMenu';
-import AccountSettingsModal from '@/components/AccountSettingsModal';
 import ChangeThemeModal from '@/components/ChangeThemeModal';
 import Toast from '@/components/Toast';
 import Link from 'next/link';
@@ -14,7 +13,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user } = useAuth();
   const { theme } = useTheme();
   const pathname = usePathname();
-  const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isThemeModalOpen, setIsThemeModalOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; showPickaxe: boolean } | null>(null);
 
@@ -89,7 +87,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         >
           <UserMenu
             username={user?.username || 'User'}
-            onOpenAccountSettings={() => setIsAccountModalOpen(true)}
             onOpenThemeSettings={() => setIsThemeModalOpen(true)}
           />
         </div>
@@ -130,11 +127,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
 
       {/* Modals */}
-      <AccountSettingsModal
-        isOpen={isAccountModalOpen}
-        onClose={() => setIsAccountModalOpen(false)}
-        onShowToast={(message) => setToast({ message, showPickaxe: true })}
-      />
       <ChangeThemeModal
         isOpen={isThemeModalOpen}
         onClose={() => setIsThemeModalOpen(false)}

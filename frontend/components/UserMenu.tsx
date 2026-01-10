@@ -1,19 +1,20 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 
 interface UserMenuProps {
   username: string;
-  onOpenAccountSettings: () => void;
   onOpenThemeSettings: () => void;
 }
 
-export default function UserMenu({ username, onOpenAccountSettings, onOpenThemeSettings }: UserMenuProps) {
+export default function UserMenu({ username, onOpenThemeSettings }: UserMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { logout } = useAuth();
   const { theme } = useTheme();
+  const router = useRouter();
   const menuRef = useRef<HTMLDivElement>(null);
 
   const handleMenuClick = (action: () => void) => {
@@ -74,7 +75,7 @@ export default function UserMenu({ username, onOpenAccountSettings, onOpenThemeS
         >
           <div className="p-2">
             <button
-              onClick={() => handleMenuClick(onOpenAccountSettings)}
+              onClick={() => handleMenuClick(() => router.push('/settings'))}
               className="w-full text-left px-4 py-3 rounded-lg transition-all flex items-center gap-3"
               style={{
                 color: 'var(--text-primary)',

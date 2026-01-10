@@ -165,30 +165,15 @@ export default function DashboardPage() {
               <div className="terminal-dot"></div>
             </div>
           )}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 
-                className={`text-2xl font-bold mb-2 ${theme === 'cyber' ? 'text-glow-subtle' : 'text-white'}`}
-                style={{ color: 'var(--text-primary)' }}
-              >
-                Welcome back, {user?.username}!
-              </h1>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                Open-Source AI SIEM Intelligence System
-              </p>
-            </div>
-            <button
-              onClick={() => window.location.href = '/settings'}
-              className="px-4 py-2 rounded transition-opacity hover:opacity-80"
-              style={{
-                background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.1)' : 'rgba(100, 116, 139, 0.3)',
-                color: theme === 'cyber' ? 'var(--cyber-green)' : 'var(--text-primary)',
-                border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.3)' : '1px solid rgba(100, 116, 139, 0.5)',
-              }}
-            >
-              👤 Account Settings
-            </button>
-          </div>
+          <h1 
+            className={`text-2xl font-bold mb-2 ${theme === 'cyber' ? 'text-glow-subtle' : 'text-white'}`}
+            style={{ color: 'var(--text-primary)' }}
+          >
+            Welcome back, {user?.username}!
+          </h1>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            Open-Source AI SIEM Intelligence System
+          </p>
         </div>
 
         {/* Stats Grid */}
