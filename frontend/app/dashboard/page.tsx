@@ -332,32 +332,40 @@ export default function DashboardPage() {
                     
                     {service.networks.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-2">
-                        {service.networks.map((network) => {
-                          let badge = 'Backend';
-                          let badgeColor = '#6366f1'; // indigo
+                        {(() => {
+                          // Determine primary network (DMZ > Internal > Backend)
+                          // Only show backend badge if it's the only network
+                          const hasDMZ = service.networks.some(n => n.includes('dmz'));
+                          const hasInternal = service.networks.some(n => n.includes('internal'));
+                          const hasBackend = service.networks.some(n => n.includes('backend'));
                           
-                          if (network.includes('dmz')) {
-                            badge = 'DMZ';
-                            badgeColor = '#f59e0b'; // amber
-                          } else if (network.includes('internal')) {
-                            badge = 'Internal';
-                            badgeColor = '#8b5cf6'; // purple
+                          const badges = [];
+                          
+                          if (hasDMZ) {
+                            badges.push({ label: 'DMZ', color: '#f59e0b' }); // amber
+                          }
+                          if (hasInternal) {
+                            badges.push({ label: 'Internal', color: '#8b5cf6' }); // purple
+                          }
+                          // Only show backend if it's the only network
+                          if (hasBackend && !hasDMZ && !hasInternal) {
+                            badges.push({ label: 'Backend', color: '#6366f1' }); // indigo
                           }
                           
-                          return (
+                          return badges.map((badge) => (
                             <span
-                              key={network}
+                              key={badge.label}
                               className="text-xs px-2 py-1 rounded"
                               style={{
-                                background: `${badgeColor}33`,
-                                color: badgeColor,
-                                border: `1px solid ${badgeColor}66`
+                                background: `${badge.color}33`,
+                                color: badge.color,
+                                border: `1px solid ${badge.color}66`
                               }}
                             >
-                              {badge}
+                              {badge.label}
                             </span>
-                          );
-                        })}
+                          ));
+                        })()}
                       </div>
                     )}
                   </div>
