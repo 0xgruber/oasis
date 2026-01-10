@@ -18,6 +18,7 @@ import clickhouse_connect
 
 from src.config import settings
 from src.auth import verify_password, create_access_token, decode_access_token
+from src.docker_client import get_service_status
 
 logger = structlog.get_logger()
 
@@ -169,6 +170,23 @@ async def health_check():
         service="api-service",
         version="0.1.0",
     )
+
+
+@app.get("/api/services/status")
+async def services_status(current_user: dict = Depends(get_current_user)):
+    """
+    Get real-time status of all OASIS Docker containers
+
+    Requires authentication. Returns container health, state, uptime, and networks.
+    """
+    try:
+        return get_service_status()
+    except Exception as e:
+        logger.error("service_status_query_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to query service status: {str(e)}",
+        )
 
 
 @app.post("/auth/login", response_model=LoginResponse)
