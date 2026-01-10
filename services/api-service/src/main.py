@@ -172,7 +172,7 @@ async def health_check():
     )
 
 
-@app.get("/api/services/status")
+@app.get("/services/status")
 async def services_status(current_user: dict = Depends(get_current_user)):
     """
     Get real-time status of all OASIS Docker containers
