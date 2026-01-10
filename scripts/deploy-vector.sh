@@ -106,14 +106,34 @@ fi
 if [ "$SKIP_INSTALL" != "true" ]; then
   echo "   📥 Installing Vector via official installer..."
   curl --proto '=https' --tlsv1.2 -sSfL https://sh.vector.dev | bash -s -- -y
+  
+  # Add Vector to PATH for this session
+  export PATH="$HOME/.vector/bin:$PATH"
 fi
 
 # Detect actual Vector installation location
 VECTOR_BIN=$(command -v vector 2>/dev/null)
 
+# If not in PATH, try common locations
+if [ -z "$VECTOR_BIN" ]; then
+  if [ -f "$HOME/.vector/bin/vector" ]; then
+    VECTOR_BIN="$HOME/.vector/bin/vector"
+    export PATH="$HOME/.vector/bin:$PATH"
+  elif [ -f "/root/.vector/bin/vector" ]; then
+    VECTOR_BIN="/root/.vector/bin/vector"
+    export PATH="/root/.vector/bin:$PATH"
+  elif [ -f "/usr/local/bin/vector" ]; then
+    VECTOR_BIN="/usr/local/bin/vector"
+  fi
+fi
+
 if [ -z "$VECTOR_BIN" ]; then
   echo "   ❌ ERROR: Vector binary not found after installation"
   echo "   Please check installation logs above for errors."
+  echo "   Checked locations:"
+  echo "     - $HOME/.vector/bin/vector"
+  echo "     - /root/.vector/bin/vector"
+  echo "     - /usr/local/bin/vector"
   exit 1
 fi
 
