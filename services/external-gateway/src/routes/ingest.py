@@ -187,12 +187,19 @@ async def ingest_logs(
             or "fluent-bit"
         )
 
+        # Extract hostname for agent heartbeat tracking
+        hostname = entry.get("_HOSTNAME") or entry.get("hostname") or entry.get("host")
+
         # Create metadata from all other fields
         metadata = {
             k: v
             for k, v in entry.items()
             if k not in ["date", "message", "log", "source", "timestamp", "severity"]
         }
+
+        # Always include hostname in metadata for agent heartbeat tracking
+        if hostname:
+            metadata["_HOSTNAME"] = hostname
 
         logs.append(
             LogEntry(

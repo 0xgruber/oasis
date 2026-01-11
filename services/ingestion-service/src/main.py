@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from src.config import settings
 from src.clickhouse import ch_client
 from src.normalizer import OCSFNormalizer
+from src.database import db_pool
 
 logger = structlog.get_logger()
 
@@ -24,8 +25,10 @@ async def lifespan(app: FastAPI):
     """Application lifespan"""
     logger.info("ingestion_service_starting")
     ch_client.connect()
+    await db_pool.connect()
     yield
     ch_client.disconnect()
+    await db_pool.disconnect()
     logger.info("ingestion_service_shutting_down")
 
 
@@ -104,6 +107,18 @@ async def ingest_logs(request: IngestRequest) -> IngestResponse:
         # TODO: Add tenant lookup from PostgreSQL for retention_days
         ch_client.ensure_tenant_table(tenant_id, retention_days=90)
 
+        # Extract unique hostnames from logs for heartbeat updates
+        hostnames = set()
+        for log in request.logs:
+            # Check metadata for hostname fields (common keys from Fluent Bit)
+            hostname = (
+                log.metadata.get("_HOSTNAME")
+                or log.metadata.get("hostname")
+                or log.metadata.get("host")
+            )
+            if hostname:
+                hostnames.add(hostname)
+
         # Normalize logs to OCSF
         normalized_logs = []
         for log in request.logs:
@@ -125,11 +140,26 @@ async def ingest_logs(request: IngestRequest) -> IngestResponse:
         # Insert into ClickHouse
         inserted = ch_client.insert_logs(tenant_id, normalized_logs)
 
+        # Update agent heartbeats (async, don't wait for completion)
+        if hostnames:
+            for hostname in hostnames:
+                try:
+                    await db_pool.update_agent_heartbeat(tenant_id, hostname)
+                except Exception as e:
+                    # Log but don't fail ingestion if heartbeat fails
+                    logger.error(
+                        "heartbeat_update_failed",
+                        tenant_id=tenant_id,
+                        hostname=hostname,
+                        error=str(e),
+                    )
+
         logger.info(
             "ingestion_completed",
             tenant_id=tenant_id,
             accepted=inserted,
             rejected=log_count - inserted,
+            hostnames=list(hostnames),
         )
 
         return IngestResponse(
