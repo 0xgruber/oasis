@@ -16,10 +16,10 @@
 #Requires -RunAsAdministrator
 
 $ErrorActionPreference = "Stop"
-$SERVICE_NAME = "fluent-bit"
-$INSTALL_DIR = "C:\fluent-bit"
-$CONFIG_DIR = "C:\fluent-bit\conf"
-$DATA_DIR = "C:\ProgramData\fluent-bit"
+$SERVICE_NAME = "OASISAgent"
+$INSTALL_DIR = "C:\Program Files\Oasis"
+$CONFIG_ROOT = "C:\ProgramData\Oasis"
+$CONFIG_DIR = $CONFIG_ROOT
 
 function Write-Info {
     param([string]$Message)
@@ -73,13 +73,13 @@ function Remove-Installation {
 }
 
 function Remove-DataFiles {
-    Write-Info "Removing data files..."
+    Write-Info "Removing configuration and data files..."
     
-    if (Test-Path $DATA_DIR) {
-        Remove-Item -Path $DATA_DIR -Recurse -Force
-        Write-Success "Data removed: $DATA_DIR"
+    if (Test-Path $CONFIG_ROOT) {
+        Remove-Item -Path $CONFIG_ROOT -Recurse -Force
+        Write-Success "Configuration and data removed: $CONFIG_ROOT"
     } else {
-        Write-Info "Data directory not found"
+        Write-Info "Configuration directory not found"
     }
 }
 

@@ -1,10 +1,10 @@
 # O.A.S.I.S. Phase Tracker
 
-**Last Updated:** 2026-01-11 (Phase 2A complete - multi-credential RBAC system)
+**Last Updated:** 2026-01-11 (Phase 2A complete - multi-credential RBAC + metrics service)
 
 ## Current Status
 
-**Active Phase:** Phase 2B - Tenant Agent Limits & Credential Management  
+**Active Phase:** Phase 2B - Agent Management & Monitoring  
 **Branch:** `develop`  
 **Production Release:** v1.0.0 (when ALL phases complete)
 
@@ -161,7 +161,7 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 
 #### Phase 2A: Multi-Portal Foundation & RBAC
 **Status:** Complete  
-**Completed:** 2026-01-11 | **Commit:** 0ef31f3
+**Completed:** 2026-01-11 | **Commits:** 0ef31f3, 9f61db6, 889b7ad, bb0c927
 
 **Goals:**
 - Multi-credential authentication system
@@ -169,6 +169,7 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - Route-based access control middleware
 - Admin portal with system metrics
 - SOC portal updates
+- Dedicated metrics service with caching
 
 **Completion Criteria:**
 - [x] Database: `credentials` table with credential_type enum
@@ -181,12 +182,25 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - [x] SOC Portal: Removed admin links (separation of duties)
 - [x] SOC Portal: Added Tenant Settings navigation
 - [x] Login page: Display both credential sets
+- [x] Metrics Service: Dedicated microservice with Redis caching
+- [x] Redis Integration: Cache layer for metrics (30-60s TTL)
+- [x] API Service: Proxy to metrics service via httpx
+- [x] Database Permissions: api_user ALL PRIVILEGES on agents table
 
 **Key Implementation:**
 - **Architecture:** Each person can have multiple credentials (user.soc, user.admin), each granting access to ONE portal only
 - **Separation of Duties:** Admin credentials completely separate from SOC analyst work
 - **Audit Trail:** System tracks which credential (credential_id) was used for each action
 - **Test Credentials:** user.soc / Admin123! (SOC Portal), user.admin / Admin123! (Admin Portal)
+- **Metrics Architecture:** API Service → Metrics Service → Redis Cache → ClickHouse/PostgreSQL
+- **Performance:** Redis caching reduces database queries by ~97% (30-60s TTL)
+
+**Metrics Service Details:**
+- **Technology:** Python 3.11 + FastAPI + Redis + asyncpg + clickhouse-connect
+- **Endpoints:** `/metrics/system`, `/metrics/tenant/{id}`, `/metrics/agent/{id}`, `/cache/clear`
+- **Caching Strategy:** System/tenant metrics (30s), agent metrics (60s), LRU eviction policy
+- **Docker Network:** 172.22.0.41 (internal only), depends on redis/clickhouse/postgresql
+- **Files Created:** `services/metrics-service/` (Dockerfile, pyproject.toml, src/main.py, src/config.py, src/cache.py, src/metrics.py)
 
 ---
 
@@ -339,6 +353,7 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - Security scanning (Trivy, gitleaks, Syft)
 - Automated Docker builds
 - Integration tests across all portals and services
+- Automated agent update management system
 
 **Completion Criteria:**
 - [ ] Pytest test suite for all Python services (API, Ingestion, Gateways)
@@ -351,6 +366,90 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - [ ] End-to-end tests (agent → portal workflows)
 - [ ] RBAC and multi-tenant isolation tests
 - [ ] Performance and load testing
+
+---
+
+#### Phase 4A: OASIS Maintenance Service
+**Status:** Pending  
+**Estimated Duration:** 2-3 weeks
+
+**Business Context:**  
+Automated agent update management system to ensure all deployed Fluent Bit agents stay current with required versions. Enables centralized version control for agents deployed at customer sites without manual intervention.
+
+**Architecture Overview:**
+- **Separate GitHub Repository:** `oasis-maintenance-service` with release pipeline
+- **Self-Update Mechanism:** Service checks GitHub Releases API for its own updates
+- **Agent Update Mechanism:** Service downloads Fluent Bit from official packages.fluentbit.io
+- **Version Authority:** OASIS Admin API specifies required global agent version
+- **Check Frequency:** 24-hour interval (daily check-in)
+
+**Goals:**
+- Cross-platform maintenance service (Windows/Linux/macOS)
+- Self-updating capability via GitHub Releases
+- Automated Fluent Bit agent updates
+- Version requirement API integration
+- Rollback capability on update failure
+- Update status reporting to OASIS platform
+
+**Completion Criteria:**
+- [ ] New GitHub repository: `oasis-maintenance-service`
+- [ ] GitHub Actions release pipeline (Windows/Linux/macOS binaries)
+- [ ] Service installation in deployment scripts (deploy-fluentbit.ps1/sh)
+- [ ] Self-update mechanism (GitHub Releases API)
+- [ ] Agent version check (calls OASIS API `/api/v1/agents/version-requirement`)
+- [ ] Fluent Bit download and update logic (from packages.fluentbit.io)
+- [ ] Checksum verification and validation
+- [ ] Safe update process (stop service → backup → install → verify → rollback on failure)
+- [ ] Update status reporting to OASIS API
+- [ ] Admin Portal: Global agent version configuration UI
+- [ ] Admin Portal: Agent update status dashboard
+- [ ] Logging and error handling
+- [ ] Service runs as Windows Service/Linux systemd service/macOS LaunchDaemon
+- [ ] 24-hour check-in timer with jitter (avoid thundering herd)
+
+**API Endpoints (OASIS Gateway):**
+```
+GET  /api/v1/agents/version-requirement
+POST /api/v1/agents/update-status
+```
+
+**Admin Configuration:**
+- Global setting: "Required Fluent Bit Version" (e.g., 3.0.3)
+- Update urgency level: optional/recommended/required
+- Grace period before forced update (days)
+
+**Update Flow:**
+1. Maintenance service checks OASIS API for required version (every 24h)
+2. If current version ≠ required version:
+   - Download Fluent Bit from packages.fluentbit.io
+   - Verify checksum
+   - Stop Fluent Bit service
+   - Backup current installation
+   - Install new version
+   - Update service configuration if needed
+   - Start Fluent Bit service
+   - Verify service is running
+   - Report success/failure to OASIS API
+   - Cleanup temp files (success) or rollback (failure)
+
+**Self-Update Flow:**
+1. Maintenance service checks GitHub Releases API for latest version
+2. If newer version available:
+   - Download new maintenance service binary
+   - Verify checksum/signature
+   - Replace binary (platform-specific process)
+   - Restart service
+   - Verify new version running
+
+**Deployment Integration:**
+- Update `deploy-fluentbit.ps1` to install maintenance service
+- Update `deploy-fluentbit.sh` to install maintenance service  
+- Update `deploy-fluentbit-macos.sh` to install maintenance service
+- Initial deployment still uses pinned Fluent Bit version
+- Maintenance service takes over after initial deployment
+
+**Implementation Language:**
+- TBD: Python (cross-platform, easy maintenance) vs. Go (compiled, no dependencies)
 
 ---
 

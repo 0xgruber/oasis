@@ -21,13 +21,15 @@
 # Script configuration
 $ErrorActionPreference = "Stop"
 $FLUENT_BIT_VERSION = "3.0.3"
-$INSTALL_DIR = "C:\fluent-bit"
-$CONFIG_DIR = "C:\fluent-bit\conf"
-$LOG_DIR = "C:\ProgramData\fluent-bit\logs"
-$STORAGE_DIR = "C:\ProgramData\fluent-bit\storage"
-$SERVICE_NAME = "fluent-bit"
+$INSTALL_DIR = "C:\Program Files\Oasis"
+$CONFIG_ROOT = "C:\ProgramData\Oasis"
+$CONFIG_DIR = $CONFIG_ROOT
+$LOG_DIR = "$CONFIG_ROOT\logs"
+$STORAGE_DIR = "$CONFIG_ROOT\storage"
+$TENANT_CONFIG = "$CONFIG_ROOT\tenant.conf"
+$SERVICE_NAME = "OASISAgent"
+$SERVICE_DISPLAY_NAME = "OASIS Agent"
 $DOWNLOAD_URL = "https://packages.fluentbit.io/windows/fluent-bit-$FLUENT_BIT_VERSION-win64.zip"
-$TENANT_CONFIG = "C:\oasis\tenant.conf"
 
 # Tenant Configuration (loaded from tenant.conf)
 $OASIS_GATEWAY_HOST = ""
@@ -66,21 +68,47 @@ function Test-Administrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Initialize-Directories {
+    Write-Info "Initializing required directories..."
+    
+    # Create base directories if they don't exist
+    if (-not (Test-Path $CONFIG_ROOT)) {
+        Write-Info "Creating configuration root directory: $CONFIG_ROOT"
+        New-Item -ItemType Directory -Path $CONFIG_ROOT -Force | Out-Null
+    }
+    
+    if (-not (Test-Path $INSTALL_DIR)) {
+        Write-Info "Creating installation directory: $INSTALL_DIR"
+        New-Item -ItemType Directory -Path $INSTALL_DIR -Force | Out-Null
+    }
+    
+    Write-Success "Required directories initialized"
+}
+
 function Load-TenantConfig {
     Write-Info "Loading tenant configuration from $TENANT_CONFIG..."
     
+    # Check if tenant.conf exists in config directory
     if (-not (Test-Path $TENANT_CONFIG)) {
-        Write-Error "Tenant configuration file not found: $TENANT_CONFIG"
-        Write-Host ""
-        Write-Host "Please create $TENANT_CONFIG with the following content:" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "OASIS_GATEWAY_HOST=your.gateway.host"
-        Write-Host "OASIS_GATEWAY_PORT=8444"
-        Write-Host "OASIS_API_KEY=your_api_key"
-        Write-Host "OASIS_TENANT_ID=your_tenant_uuid"
-        Write-Host ""
-        Write-Host "You can generate this file from the O.A.S.I.S. Dashboard." -ForegroundColor Yellow
-        exit 1
+        # Try to copy from current directory
+        $localTenantConfig = Join-Path (Get-Location) "tenant.conf"
+        if (Test-Path $localTenantConfig) {
+            Write-Info "Found tenant.conf in current directory, copying to $TENANT_CONFIG..."
+            Copy-Item -Path $localTenantConfig -Destination $TENANT_CONFIG -Force
+            Write-Success "Tenant configuration copied successfully"
+        } else {
+            Write-Error "Tenant configuration file not found: $TENANT_CONFIG"
+            Write-Host ""
+            Write-Host "Please place tenant.conf in the current directory or create $TENANT_CONFIG with the following content:" -ForegroundColor Yellow
+            Write-Host ""
+            Write-Host "OASIS_GATEWAY_HOST=your.gateway.host"
+            Write-Host "OASIS_GATEWAY_PORT=8444"
+            Write-Host "OASIS_API_KEY=your_api_key"
+            Write-Host "OASIS_TENANT_ID=your_tenant_uuid"
+            Write-Host ""
+            Write-Host "You can generate this file from the O.A.S.I.S. Dashboard." -ForegroundColor Yellow
+            exit 1
+        }
     }
     
     # Load configuration file
@@ -137,8 +165,9 @@ function Load-TenantConfig {
 function Install-FluentBit {
     Write-Info "Installing Fluent Bit $FLUENT_BIT_VERSION..."
     
-    # Check if already installed
-    if (Test-Path $INSTALL_DIR) {
+    # Check if already installed (look for the actual binary, not just the directory)
+    $fluentBitBinary = Join-Path $INSTALL_DIR "bin\fluent-bit.exe"
+    if (Test-Path $fluentBitBinary) {
         Write-Warning "Fluent Bit is already installed at $INSTALL_DIR"
         $response = Read-Host "Do you want to reinstall? (y/N)"
         if ($response -ne "y" -and $response -ne "Y") {
@@ -171,7 +200,16 @@ function Install-FluentBit {
             throw "Failed to find extracted Fluent Bit directory"
         }
         
-        Move-Item -Path $extractedDir.FullName -Destination $INSTALL_DIR -Force
+        # Copy contents of extracted directory to installation directory
+        Write-Info "Moving files to installation directory..."
+        Get-ChildItem -Path $extractedDir.FullName -Recurse | ForEach-Object {
+            $targetPath = Join-Path $INSTALL_DIR $_.FullName.Substring($extractedDir.FullName.Length)
+            if ($_.PSIsContainer) {
+                New-Item -ItemType Directory -Path $targetPath -Force | Out-Null
+            } else {
+                Copy-Item -Path $_.FullName -Destination $targetPath -Force
+            }
+        }
         
         Write-Success "Fluent Bit installed successfully"
     }
@@ -215,12 +253,31 @@ function Register-Agent {
         # Import CA certificate for this session
         $certPath = Join-Path $CONFIG_DIR "oasis-ca.pem"
         
+        # Skip certificate validation (compatible with older PowerShell versions)
+        if (-not ([System.Management.Automation.PSTypeName]'ServerCertificateValidationCallback').Type) {
+            $certCallback = @"
+                using System;
+                using System.Net;
+                using System.Net.Security;
+                using System.Security.Cryptography.X509Certificates;
+                public class ServerCertificateValidationCallback {
+                    public static void Ignore() {
+                        ServicePointManager.ServerCertificateValidationCallback += 
+                            delegate(Object obj, X509Certificate certificate, X509Chain chain, SslPolicyErrors errors) {
+                                return true;
+                            };
+                    }
+                }
+"@
+            Add-Type $certCallback
+        }
+        [ServerCertificateValidationCallback]::Ignore()
+        
         $response = Invoke-RestMethod -Uri "https://${OASIS_GATEWAY_HOST}:${OASIS_GATEWAY_PORT}/api/v1/agents/register" `
             -Method POST `
             -Headers $headers `
             -Body $body `
-            -ContentType "application/json" `
-            -SkipCertificateCheck
+            -ContentType "application/json"
         
         Write-Success "Agent registered successfully"
     }
@@ -354,13 +411,12 @@ function New-WindowsService {
     
     Stop-ServiceIfExists
     
-    # Create service using nssm or sc.exe
+    # Create service using sc.exe
     $binPath = Join-Path $INSTALL_DIR "bin\fluent-bit.exe"
     $configPath = Join-Path $CONFIG_DIR "fluent-bit.conf"
     
     # Use sc.exe to create service
-    $scCommand = "sc.exe create $SERVICE_NAME binPath= `"$binPath -c $configPath`" start= auto DisplayName= `"Fluent Bit - O.A.S.I.S. Log Forwarder`""
-    Invoke-Expression $scCommand | Out-Null
+    & sc.exe create $SERVICE_NAME binPath= "`"$binPath`" -c `"$configPath`"" start= auto DisplayName= $SERVICE_DISPLAY_NAME | Out-Null
     
     # Set service description
     & sc.exe description $SERVICE_NAME "Fluent Bit log forwarder for O.A.S.I.S. SIEM platform" | Out-Null
@@ -401,10 +457,10 @@ function Show-Summary {
     Write-Host "  - Windows Event: Event Viewer > Applications and Services Logs"
     Write-Host ""
     Write-Host "Service commands:"
-    Write-Host "  - Status:        Get-Service fluent-bit"
-    Write-Host "  - Start:         Start-Service fluent-bit"
-    Write-Host "  - Stop:          Stop-Service fluent-bit"
-    Write-Host "  - Restart:       Restart-Service fluent-bit"
+    Write-Host "  - Status:        Get-Service '$SERVICE_NAME'"
+    Write-Host "  - Start:         Start-Service '$SERVICE_NAME'"
+    Write-Host "  - Stop:          Stop-Service '$SERVICE_NAME'"
+    Write-Host "  - Restart:       Restart-Service '$SERVICE_NAME'"
     Write-Host "  - Logs:          Get-Content '$LOG_DIR\fluent-bit.log' -Wait"
     Write-Host ""
     Write-Info "Logs are now being forwarded to O.A.S.I.S."
@@ -425,6 +481,7 @@ function Main {
         exit 1
     }
     
+    Initialize-Directories
     Load-TenantConfig
     Install-FluentBit
     Register-Agent
