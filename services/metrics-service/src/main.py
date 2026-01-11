@@ -4,6 +4,7 @@ Real-time metrics aggregation and caching
 """
 
 import structlog
+from typing import Optional
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -15,6 +16,8 @@ from .metrics import (
     get_system_metrics,
     get_tenant_metrics,
     get_agent_metrics,
+    get_agents_list,
+    get_agent_status_breakdown,
 )
 
 logger = structlog.get_logger()
@@ -201,4 +204,84 @@ async def clear_tenant_cache(tenant_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to clear tenant cache: {str(e)}",
+        )
+
+
+@app.get("/metrics/agents")
+async def list_agents(tenant_id: Optional[str] = None):
+    """
+    List all agents with computed status
+
+    Query Parameters:
+        tenant_id: Optional tenant UUID filter
+
+    Returns:
+        List of agents with the following fields:
+        - agent_id: Agent UUID
+        - hostname: Agent hostname
+        - tenant_id: Tenant UUID
+        - last_seen: Last heartbeat timestamp (ISO format)
+        - status: Computed status (online/offline/dead/unknown)
+        - os_type: Operating system type
+        - os_version: Operating system version
+        - agent_type: Agent type (fluent-bit, etc.)
+
+    Example:
+        [
+            {
+                "agent_id": "660e8400-e29b-41d4-a716-446655440000",
+                "hostname": "web-01",
+                "tenant_id": "550e8400-e29b-41d4-a716-446655440000",
+                "last_seen": "2026-01-11T22:30:00+00:00",
+                "status": "online",
+                "os_type": "Linux",
+                "os_version": "Ubuntu 24.04",
+                "agent_type": "fluent-bit"
+            }
+        ]
+    """
+    try:
+        agents = await get_agents_list(tenant_id)
+        return agents
+    except Exception as e:
+        logger.error("list_agents_endpoint_failed", tenant_id=tenant_id, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch agents list: {str(e)}",
+        )
+
+
+@app.get("/metrics/agents/status")
+async def agent_status_breakdown(tenant_id: Optional[str] = None):
+    """
+    Get agent status breakdown counts
+
+    Query Parameters:
+        tenant_id: Optional tenant UUID filter
+
+    Returns:
+        Dictionary with counts by status:
+        - online: Number of online agents
+        - offline: Number of offline agents
+        - dead: Number of dead agents
+        - unknown: Number of agents with unknown status
+        - total: Total number of agents
+
+    Example:
+        {
+            "online": 5,
+            "offline": 2,
+            "dead": 1,
+            "unknown": 0,
+            "total": 8
+        }
+    """
+    try:
+        breakdown = await get_agent_status_breakdown(tenant_id)
+        return breakdown
+    except Exception as e:
+        logger.error("agent_status_breakdown_endpoint_failed", tenant_id=tenant_id, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch agent status breakdown: {str(e)}",
         )

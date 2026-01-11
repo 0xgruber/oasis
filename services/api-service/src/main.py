@@ -356,6 +356,120 @@ async def get_system_metrics(current_user: dict = Depends(get_current_user)):
         )
 
 
+@app.get("/agents")
+async def list_agents(
+    tenant_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List all agents with computed status
+
+    Proxies to metrics service
+
+    Query Parameters:
+        tenant_id: Optional tenant UUID filter
+
+    Accessible by platform admins and SOC analysts
+    """
+    # Allow both platform admins and SOC analysts
+    if current_user["credential_type"] not in ["platform_admin", "soc_analyst"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators and SOC analysts can access agent information",
+        )
+
+    try:
+        # Build query params
+        params = {}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
+
+        # Proxy to metrics service
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.METRICS_SERVICE_URL}/metrics/agents",
+                params=params,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        logger.error("agents_list_http_error", status_code=e.response.status_code, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Metrics service error: {e.response.status_code}",
+        )
+    except httpx.RequestError as e:
+        logger.error("agents_list_connection_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to connect to metrics service",
+        )
+    except Exception as e:
+        logger.error("agents_list_proxy_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch agents list: {str(e)}",
+        )
+
+
+@app.get("/agents/status")
+async def agent_status_breakdown(
+    tenant_id: Optional[str] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get agent status breakdown counts
+
+    Proxies to metrics service
+
+    Query Parameters:
+        tenant_id: Optional tenant UUID filter
+
+    Accessible by platform admins and SOC analysts
+    """
+    # Allow both platform admins and SOC analysts
+    if current_user["credential_type"] not in ["platform_admin", "soc_analyst"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators and SOC analysts can access agent status",
+        )
+
+    try:
+        # Build query params
+        params = {}
+        if tenant_id:
+            params["tenant_id"] = tenant_id
+
+        # Proxy to metrics service
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.METRICS_SERVICE_URL}/metrics/agents/status",
+                params=params,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        logger.error("agent_status_http_error", status_code=e.response.status_code, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Metrics service error: {e.response.status_code}",
+        )
+    except httpx.RequestError as e:
+        logger.error("agent_status_connection_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to connect to metrics service",
+        )
+    except Exception as e:
+        logger.error("agent_status_proxy_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch agent status breakdown: {str(e)}",
+        )
+
+
 @app.post("/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """

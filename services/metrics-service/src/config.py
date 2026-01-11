@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     CACHE_TTL_SYSTEM_METRICS: int = 30  # System-wide metrics
     CACHE_TTL_TENANT_METRICS: int = 30  # Per-tenant metrics
     CACHE_TTL_AGENT_METRICS: int = 60  # Per-agent metrics
+    CACHE_TTL_AGENT_LIST: int = 30  # Agent list with status
+    CACHE_TTL_AGENT_STATUS: int = 30  # Agent status breakdown
+    CACHE_TTL_TENANT_THRESHOLDS: int = 300  # Tenant threshold settings (5 minutes)
 
     @property
     def clickhouse_url(self) -> str:

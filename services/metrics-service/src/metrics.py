@@ -3,6 +3,7 @@ Metrics calculation logic
 """
 
 from typing import Dict, Any
+from datetime import datetime, timezone
 import structlog
 import asyncpg
 import clickhouse_connect
@@ -49,6 +50,89 @@ async def close_connections():
     if ch_client:
         ch_client.close()
     logger.info("database_connections_closed")
+
+
+def calculate_agent_status(last_seen: datetime, offline_threshold: int, dead_threshold: int) -> str:
+    """
+    Calculate agent status based on last_seen timestamp
+
+    Args:
+        last_seen: Agent's last_seen timestamp (timezone-aware)
+        offline_threshold: Minutes before considered offline
+        dead_threshold: Minutes before considered dead
+
+    Returns:
+        'online', 'offline', or 'dead'
+    """
+    if not last_seen:
+        return "unknown"
+
+    # Ensure last_seen is timezone-aware
+    if last_seen.tzinfo is None:
+        last_seen = last_seen.replace(tzinfo=timezone.utc)
+
+    now = datetime.now(timezone.utc)
+    minutes_since_seen = (now - last_seen).total_seconds() / 60
+
+    if minutes_since_seen < offline_threshold:
+        return "online"
+    elif minutes_since_seen < dead_threshold:
+        return "offline"
+    else:
+        return "dead"
+
+
+async def get_tenant_thresholds(tenant_id: str) -> Dict[str, int]:
+    """
+    Get agent thresholds for a tenant (with caching)
+
+    Args:
+        tenant_id: Tenant UUID
+
+    Returns:
+        Dictionary with offline_minutes and dead_minutes thresholds
+    """
+    # Check cache first
+    cache_key = f"thresholds:tenant:{tenant_id}"
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        logger.debug("tenant_thresholds_cache_hit", tenant_id=tenant_id)
+        return cached
+
+    # Default thresholds
+    thresholds = {
+        "offline_minutes": 480,  # 8 hours
+        "dead_minutes": 43200,  # 30 days
+    }
+
+    try:
+        if pg_pool:
+            async with pg_pool.acquire() as conn:
+                result = await conn.fetchrow(
+                    """
+                    SELECT agent_offline_threshold, agent_dead_threshold
+                    FROM tenant_settings
+                    WHERE tenant_id = $1
+                    """,
+                    tenant_id,
+                )
+
+                if result:
+                    thresholds["offline_minutes"] = result["agent_offline_threshold"]
+                    thresholds["dead_minutes"] = result["agent_dead_threshold"]
+                    logger.debug(
+                        "tenant_thresholds_loaded", tenant_id=tenant_id, thresholds=thresholds
+                    )
+                else:
+                    logger.debug("tenant_thresholds_using_defaults", tenant_id=tenant_id)
+
+        # Cache the result
+        await cache.set(cache_key, thresholds, settings.CACHE_TTL_TENANT_THRESHOLDS)
+        return thresholds
+
+    except Exception as e:
+        logger.warning("tenant_thresholds_query_failed", tenant_id=tenant_id, error=str(e))
+        return thresholds  # Return defaults on error
 
 
 async def get_system_metrics() -> Dict[str, Any]:
@@ -283,9 +367,9 @@ async def get_agent_metrics(agent_id: str) -> Dict[str, Any]:
                 async with pg_pool.acquire() as conn:
                     agent = await conn.fetchrow(
                         """
-                        SELECT hostname, tenant_id, last_seen, status
+                        SELECT id, hostname, tenant_id, last_seen, os_type, agent_type
                         FROM agents 
-                        WHERE agent_id = $1
+                        WHERE id = $1
                         """,
                         agent_id,
                     )
@@ -296,7 +380,18 @@ async def get_agent_metrics(agent_id: str) -> Dict[str, Any]:
                         metrics["last_seen"] = (
                             agent["last_seen"].isoformat() if agent["last_seen"] else None
                         )
-                        metrics["status"] = agent["status"]
+
+                        # Calculate agent status dynamically
+                        thresholds = await get_tenant_thresholds(str(agent["tenant_id"]))
+                        metrics["status"] = calculate_agent_status(
+                            agent["last_seen"],
+                            thresholds["offline_minutes"],
+                            thresholds["dead_minutes"],
+                        )
+
+                        # Add additional agent info
+                        metrics["os_type"] = agent["os_type"]
+                        metrics["agent_type"] = agent["agent_type"]
 
                         # Get logs count for this agent from ClickHouse
                         if ch_client and agent["tenant_id"]:
@@ -335,4 +430,145 @@ async def get_agent_metrics(agent_id: str) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error("agent_metrics_calculation_failed", agent_id=agent_id, error=str(e))
+        raise
+
+
+async def get_agents_list(tenant_id: str | None = None) -> list[Dict[str, Any]]:
+    """
+    Get list of all agents with computed status
+
+    Args:
+        tenant_id: Optional tenant filter
+
+    Returns:
+        List of agent dictionaries with status
+    """
+    # Build cache key
+    cache_key = f"metrics:agents:tenant:{tenant_id}" if tenant_id else "metrics:agents:all"
+
+    # Check cache first
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        logger.debug("agents_list_cache_hit", tenant_id=tenant_id)
+        return cached
+
+    agents = []
+
+    try:
+        if pg_pool:
+            async with pg_pool.acquire() as conn:
+                # Build query with optional tenant filter
+                query = """
+                    SELECT 
+                        id as agent_id,
+                        hostname,
+                        tenant_id,
+                        last_seen,
+                        os_type,
+                        os_version,
+                        agent_type,
+                        is_active
+                    FROM agents
+                    WHERE is_active = true
+                """
+                params = []
+
+                if tenant_id:
+                    query += " AND tenant_id = $1"
+                    params.append(tenant_id)
+
+                query += " ORDER BY last_seen DESC"
+
+                rows = await conn.fetch(query, *params)
+
+                # Get thresholds per tenant (cached internally)
+                tenant_thresholds = {}
+
+                for row in rows:
+                    tid = str(row["tenant_id"])
+
+                    # Get thresholds for this tenant (cached)
+                    if tid not in tenant_thresholds:
+                        tenant_thresholds[tid] = await get_tenant_thresholds(tid)
+
+                    thresholds = tenant_thresholds[tid]
+
+                    # Calculate status
+                    status = calculate_agent_status(
+                        row["last_seen"],
+                        thresholds["offline_minutes"],
+                        thresholds["dead_minutes"],
+                    )
+
+                    agents.append(
+                        {
+                            "agent_id": str(row["agent_id"]),
+                            "hostname": row["hostname"],
+                            "tenant_id": tid,
+                            "last_seen": row["last_seen"].isoformat() if row["last_seen"] else None,
+                            "status": status,
+                            "os_type": row["os_type"],
+                            "os_version": row["os_version"],
+                            "agent_type": row["agent_type"],
+                        }
+                    )
+
+        # Cache the result
+        await cache.set(cache_key, agents, settings.CACHE_TTL_AGENT_LIST)
+        logger.info("agents_list_calculated", count=len(agents), tenant_id=tenant_id)
+
+        return agents
+
+    except Exception as e:
+        logger.error("agents_list_calculation_failed", tenant_id=tenant_id, error=str(e))
+        raise
+
+
+async def get_agent_status_breakdown(tenant_id: str | None = None) -> Dict[str, int]:
+    """
+    Get agent status counts
+
+    Args:
+        tenant_id: Optional tenant filter
+
+    Returns:
+        Dictionary with counts by status
+    """
+    # Build cache key
+    cache_key = (
+        f"metrics:agents:status:tenant:{tenant_id}" if tenant_id else "metrics:agents:status:all"
+    )
+
+    # Check cache first
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        logger.debug("agent_status_breakdown_cache_hit", tenant_id=tenant_id)
+        return cached
+
+    breakdown = {
+        "online": 0,
+        "offline": 0,
+        "dead": 0,
+        "unknown": 0,
+        "total": 0,
+    }
+
+    try:
+        # Get agents list (uses its own cache)
+        agents = await get_agents_list(tenant_id)
+
+        # Count by status
+        for agent in agents:
+            status = agent.get("status", "unknown")
+            breakdown[status] = breakdown.get(status, 0) + 1
+            breakdown["total"] += 1
+
+        # Cache the result
+        await cache.set(cache_key, breakdown, settings.CACHE_TTL_AGENT_STATUS)
+        logger.info("agent_status_breakdown_calculated", breakdown=breakdown, tenant_id=tenant_id)
+
+        return breakdown
+
+    except Exception as e:
+        logger.error("agent_status_breakdown_failed", tenant_id=tenant_id, error=str(e))
         raise
