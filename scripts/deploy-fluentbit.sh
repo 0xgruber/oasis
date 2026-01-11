@@ -500,13 +500,13 @@ create_config() {
     storage.type              filesystem
 
 # ============================================
-# Input: syslog
+# Input: syslog file
 # ============================================
 [INPUT]
-    Name                      syslog
+    Name                      tail
     Path                      /var/log/syslog
     Tag                       host.syslog
-    Read_From_Head            Off
+    Read_from_Head            Off
     storage.type              filesystem
 
 # ============================================
