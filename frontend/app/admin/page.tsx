@@ -638,7 +638,6 @@ export default function AdminHomePage() {
           </div>
         </div>
       )}
-      </div>
     </ProtectedRoute>
   );
 }
