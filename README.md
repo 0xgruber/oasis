@@ -74,30 +74,39 @@ O.A.S.I.S. uses a three-subnet architecture for defense in depth:
 
 ## Project Phases
 
-### Phase 1: Foundation (Current - Weeks 1-7+)
+### Phase 1: Foundation ✅ Complete
 - Core infrastructure (gateways, ingestion, storage)
 - Multi-tenant database architecture
 - SOC portal with comprehensive configuration UI
+- Dynamic service monitoring
 - Fluent Bit agent integration
-- CI/CD pipeline with security scanning
 
-### Phase 2: Visibility (Weeks 8-12)
-- Customer portal for tenant users
-- Advanced RBAC and user management
+### Phase 2: Customer Portal & RBAC (In Progress)
+- Three-portal architecture (Admin, SOC Analyst, Customer)
+- Role-based access control and user management
+- Agent monitoring and status tracking
+- Analyst workflow system (tenant subscriptions)
 - Enhanced search and filtering
-- Access audit trail
+- Self-service customer portal
+- Audit trail for all operations
 
-### Phase 3: The Brain (Weeks 13-17)
+### Phase 3: AI/LLM Integration
 - Local LLM integration via MCP
 - Natural language query interface
 - Semantic search with vector embeddings
-- AI-powered log analysis
+- AI-powered threat analysis
 
-### Phase 4: Operations & Polish (Weeks 18-21)
-- Alerting engine with detection rules
-- Automated triage and reporting
+### Phase 4: Testing & CI/CD Pipeline
+- Comprehensive test suite (80%+ coverage)
+- GitHub Actions CI/CD pipeline
+- Security scanning (Trivy, gitleaks)
+- Integration and end-to-end tests
+
+### Phase 5: Operations & Polish
+- Production deployment automation
+- Monitoring and alerting
 - Performance optimization and benchmarking
-- Full documentation site
+- Complete documentation
 
 ## Security Model
 

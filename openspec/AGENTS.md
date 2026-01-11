@@ -240,9 +240,9 @@ unified-mcp_compact_session(
   files_modified: [...],
   key_decisions: [...],
   next_steps: [
-    "Update PHASE_TRACKER.md to mark Phase 1C complete",
+    "Update PHASE_TRACKER.md to mark current phase complete",
     "Commit changes to develop branch",
-    "Start Phase 1D (Testing & CI/CD)"
+    "Start next phase (see PHASE_TRACKER.md for current phase)"
   ],
   fast: true
 )

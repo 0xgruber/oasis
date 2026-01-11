@@ -81,28 +81,45 @@ The objective is to architect and develop an open-source, AI-driven Security Inf
 
 ## **6\. Project Phasing & Milestones**
 
-### **Phase 1: Foundation (Weeks 1-3)**
+### **Phase 1: Foundation** ✅ Complete
 
-* **Deliverable:** Repository initialized, Docker Compose environment active (DBs running).  
-* **Deliverable:** Basic Ingestion Service running (Log in \-\> Database).  
-* **Deliverable:** Governance documents (LICENSE, CONTRIBUTING.md) committed.
+* **Deliverable:** Repository initialized, Docker Compose environment active (8 services running).  
+* **Deliverable:** Multi-tenant PostgreSQL & ClickHouse architecture.  
+* **Deliverable:** Gateway services with API key authentication.  
+* **Deliverable:** Ingestion service with OCSF normalization.  
+* **Deliverable:** SOC Portal with service monitoring and tenant management.  
+* **Deliverable:** Fluent Bit agent integration (end-to-end log flow).
 
-### **Phase 2: Visibility (Weeks 4-6)**
+### **Phase 2: Customer Portal & RBAC** (In Progress)
 
-* **Deliverable:** API Gateway defined via OpenSpec.  
-* **Deliverable:** Web Frontend with Basic Log Table and Authentication (Multi-user stubs).  
-* **Deliverable:** Search API (Direct DB queries).
+* **Deliverable:** Three-portal architecture (Admin, SOC Analyst, Customer).  
+* **Deliverable:** Role-based access control and user management.  
+* **Deliverable:** Agent monitoring and status tracking system.  
+* **Deliverable:** Analyst workflow system (tenant subscriptions).  
+* **Deliverable:** Self-service customer portal with log viewing.  
+* **Deliverable:** Audit trail for all sensitive operations.
 
-### **Phase 3: The Brain (Weeks 7-10)**
+### **Phase 3: AI/LLM Integration**
 
 * **Deliverable:** Local MCP Server operational.  
-* **Deliverable:** Integration of Nvidia GPU with Docker for Ollama.  
-* **Deliverable:** Chatbot UI functional; able to execute basic database queries via natural language.
+* **Deliverable:** Integration of GPU with Docker for Ollama.  
+* **Deliverable:** Natural language query interface functional.  
+* **Deliverable:** Semantic search with vector embeddings (Qdrant).  
+* **Deliverable:** AI-powered threat analysis.
 
-### **Phase 4: Operations & Polish (Weeks 11-14)**
+### **Phase 4: Testing & CI/CD Pipeline**
 
-* **Deliverable:** Alerting Engine and Reporting modules.  
+* **Deliverable:** Comprehensive test suite (80%+ coverage).  
+* **Deliverable:** GitHub Actions CI/CD pipeline.  
+* **Deliverable:** Security scanning (Trivy, gitleaks).  
+* **Deliverable:** Integration and end-to-end tests.
+
+### **Phase 5: Operations & Polish**
+
+* **Deliverable:** Alerting engine and reporting modules.  
 * **Deliverable:** Performance benchmarking (Target: 50k EPS ingestion).  
+* **Deliverable:** Production deployment automation.  
+* **Deliverable:** Monitoring and alerting system.  
 * **Deliverable:** Full documentation site launch.
 
 ## **7\. Out of Scope (For Initial Release)**
