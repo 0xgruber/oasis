@@ -1,10 +1,10 @@
 # O.A.S.I.S. Phase Tracker
 
-**Last Updated:** 2026-01-11 (AI assistants: update this when phases change)
+**Last Updated:** 2026-01-11 (Phase 2A complete - multi-credential RBAC system)
 
 ## Current Status
 
-**Active Phase:** Phase 2A - Multi-Portal Foundation & RBAC  
+**Active Phase:** Phase 2B - Tenant Agent Limits & Credential Management  
 **Branch:** `develop`  
 **Production Release:** v1.0.0 (when ALL phases complete)
 
@@ -128,7 +128,7 @@ See [IMPROVEMENTS.md](IMPROVEMENTS.md) - Dynamic Service Status Monitoring secti
 - [x] Agent heartbeat tracking (updates `last_seen_at` on ingestion)
 
 ### 🔄 Phase 2: Customer Portal & RBAC
-**Status:** In Progress (Phase 2A)  
+**Status:** In Progress (Phase 2B - Next)  
 **Branch:** `develop`
 
 **Business Context:**  
@@ -160,30 +160,33 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 ---
 
 #### Phase 2A: Multi-Portal Foundation & RBAC
-**Status:** In Progress  
-**Estimated Duration:** 1-2 weeks
+**Status:** Complete  
+**Completed:** 2026-01-11 | **Commit:** 0ef31f3
 
 **Goals:**
-- Three-portal architecture setup
-- User role system implementation
+- Multi-credential authentication system
+- Exclusive portal access (one credential = one portal)
 - Route-based access control middleware
-- Basic agent registration tracking
-- System settings management (global defaults)
+- Admin portal with system metrics
+- SOC portal updates
 
 **Completion Criteria:**
-- [ ] Next.js route groups: `(socap)/`, `admin/`, separate customer portal
-- [ ] PostgreSQL schema: `users.role` enum (platform_admin, soc_analyst, customer_user)
-- [ ] Middleware: Route-based access control (`/admin/*` requires `platform_admin`)
-- [ ] Admin Portal: User management UI (list, create, edit roles)
-- [ ] Admin Portal: System settings UI (global agent thresholds)
-- [ ] Database: `agents` table (hostname, IP, type, version, metadata, last_seen_at)
-- [ ] Database: `system_settings` table (key-value config store)
-- [ ] API: `POST /api/agents/register` (agent registration endpoint)
+- [x] Database: `credentials` table with credential_type enum
+- [x] Multi-credential system: user.soc and user.admin test credentials
+- [x] JWT payload updated: credential_type, credential_id, email fields
+- [x] Backend API: Login endpoint uses credentials table
+- [x] Middleware: Exclusive access control (/admin/* → platform_admin, /dashboard/* → soc_analyst)
+- [x] Admin Portal: New AdminSidebar with logout button
+- [x] Admin Portal: System metrics dashboard (live service health)
+- [x] SOC Portal: Removed admin links (separation of duties)
+- [x] SOC Portal: Added Tenant Settings navigation
+- [x] Login page: Display both credential sets
 
-**Key Decisions:**
-- Route-based admin portal (`/admin`) instead of separate port
-- Single internal portal container for simplicity
-- Self-signed TLS certs acceptable for now
+**Key Implementation:**
+- **Architecture:** Each person can have multiple credentials (user.soc, user.admin), each granting access to ONE portal only
+- **Separation of Duties:** Admin credentials completely separate from SOC analyst work
+- **Audit Trail:** System tracks which credential (credential_id) was used for each action
+- **Test Credentials:** user.soc / Admin123! (SOC Portal), user.admin / Admin123! (Admin Portal)
 
 ---
 
