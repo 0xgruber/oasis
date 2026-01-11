@@ -41,12 +41,48 @@ CONFIG_DIR="/etc/fluent-bit"
 LOG_DIR="/var/log/fluent-bit"
 SERVICE_NAME="fluent-bit"
 
-# O.A.S.I.S. Configuration (will be prompted)
-OASIS_GATEWAY_HOST=""
+# O.A.S.I.S. Configuration (hardcoded)
+OASIS_GATEWAY_HOST="192.168.5.32"
 OASIS_GATEWAY_PORT="8444"
-OASIS_API_KEY=""
-OASIS_TENANT_ID=""
-OASIS_CA_CERT_PATH=""
+OASIS_API_KEY="oasis_pk_FfCjHivG-Q-QN2lBD7Dl6-YQtoPaPnKEJsqXVLEkWwo"
+OASIS_TENANT_ID="ffffffff-ffff-ffff-ffff-ffffffffffff"
+
+# Embedded CA Certificate (will be written to disk)
+read -r -d '' OASIS_CA_CERT << 'EOF'
+-----BEGIN CERTIFICATE-----
+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
+-----END CERTIFICATE-----
+EOF
 
 ###############################################################################
 # Helper Functions
@@ -228,46 +264,12 @@ check_dependencies() {
     log_success "All dependencies present"
 }
 
-prompt_config() {
+show_config() {
     log_info "=== O.A.S.I.S. Configuration ==="
     echo
-    
-    # Gateway host
-    read -p "Enter O.A.S.I.S. Gateway host (IP or hostname): " OASIS_GATEWAY_HOST
-    if [ -z "$OASIS_GATEWAY_HOST" ]; then
-        log_error "Gateway host cannot be empty"
-        exit 1
-    fi
-    
-    # Gateway port (default 8444)
-    read -p "Enter O.A.S.I.S. Gateway port [8444]: " input_port
-    OASIS_GATEWAY_PORT="${input_port:-8444}"
-    
-    # API Key
-    read -p "Enter O.A.S.I.S. API key: " OASIS_API_KEY
-    if [ -z "$OASIS_API_KEY" ]; then
-        log_error "API key cannot be empty"
-        exit 1
-    fi
-    
-    # Tenant ID
-    read -p "Enter O.A.S.I.S. Tenant ID (UUID): " OASIS_TENANT_ID
-    if [ -z "$OASIS_TENANT_ID" ]; then
-        log_error "Tenant ID cannot be empty"
-        exit 1
-    fi
-    
-    # CA Certificate
-    read -p "Enter path to O.A.S.I.S. CA certificate: " OASIS_CA_CERT_PATH
-    if [ ! -f "$OASIS_CA_CERT_PATH" ]; then
-        log_error "CA certificate not found at: $OASIS_CA_CERT_PATH"
-        exit 1
-    fi
-    
-    echo
-    log_info "Configuration complete"
     echo "  Gateway: $OASIS_GATEWAY_HOST:$OASIS_GATEWAY_PORT"
     echo "  Tenant:  $OASIS_TENANT_ID"
+    echo "  API Key: ${OASIS_API_KEY:0:20}..."
     echo
 }
 
@@ -390,12 +392,16 @@ register_agent() {
     local os_version="$OS $OS_VERSION"
     local agent_version=$(fluent-bit --version | head -n1 | awk '{print $3}')
     
+    # Write CA cert temporarily for registration
+    local temp_ca="/tmp/oasis-ca-$$.pem"
+    echo "$OASIS_CA_CERT" > "$temp_ca"
+    
     # Register agent via API
     local response=$(curl -s -w "\n%{http_code}" -X POST \
         "https://${OASIS_GATEWAY_HOST}:${OASIS_GATEWAY_PORT}/api/v1/agents/register" \
         -H "Authorization: Bearer ${OASIS_API_KEY}" \
         -H "Content-Type: application/json" \
-        --cacert "$OASIS_CA_CERT_PATH" \
+        --cacert "$temp_ca" \
         -d "{
             \"hostname\": \"${hostname}\",
             \"agent_type\": \"fluent-bit\",
@@ -410,6 +416,9 @@ register_agent() {
     
     local http_code=$(echo "$response" | tail -n1)
     local body=$(echo "$response" | sed '$d')
+    
+    # Cleanup temp CA cert
+    rm -f "$temp_ca"
     
     if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
         log_success "Agent registered successfully"
@@ -426,9 +435,10 @@ create_config() {
     # Create config directory
     mkdir -p "$CONFIG_DIR"
     
-    # Copy CA certificate
-    cp "$OASIS_CA_CERT_PATH" "$CONFIG_DIR/oasis-ca.pem"
+    # Write embedded CA certificate to disk
+    echo "$OASIS_CA_CERT" > "$CONFIG_DIR/oasis-ca.pem"
     chmod 644 "$CONFIG_DIR/oasis-ca.pem"
+    log_success "CA certificate written to $CONFIG_DIR/oasis-ca.pem"
     
     # Create main configuration
     cat > "$CONFIG_DIR/fluent-bit.conf" <<EOF
@@ -646,7 +656,7 @@ main() {
     check_root
     detect_os
     check_dependencies
-    prompt_config
+    show_config
     
     install_fluent_bit
     register_agent

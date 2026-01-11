@@ -28,12 +28,48 @@ $STORAGE_DIR = "C:\ProgramData\fluent-bit\storage"
 $SERVICE_NAME = "fluent-bit"
 $DOWNLOAD_URL = "https://packages.fluentbit.io/windows/fluent-bit-$FLUENT_BIT_VERSION-win64.zip"
 
-# O.A.S.I.S. Configuration
-$OASIS_GATEWAY_HOST = ""
+# O.A.S.I.S. Configuration (Hardcoded)
+$OASIS_GATEWAY_HOST = "192.168.5.32"
 $OASIS_GATEWAY_PORT = "8444"
-$OASIS_API_KEY = ""
-$OASIS_TENANT_ID = ""
-$OASIS_CA_CERT_PATH = ""
+$OASIS_API_KEY = "oasis_pk_FfCjHivG-Q-QN2lBD7Dl6-YQtoPaPnKEJsqXVLEkWwo"
+$OASIS_TENANT_ID = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+
+# Embedded CA Certificate
+$OASIS_CA_CERT = @'
+-----BEGIN CERTIFICATE-----
+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
+-----END CERTIFICATE-----
+'@
 
 ###############################################################################
 # Helper Functions
@@ -65,50 +101,12 @@ function Test-Administrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
-function Get-Configuration {
+function     Get-Configuration {
     Write-Info "=== O.A.S.I.S. Configuration ==="
     Write-Host ""
-    
-    # Gateway host
-    $script:OASIS_GATEWAY_HOST = Read-Host "Enter O.A.S.I.S. Gateway host (IP or hostname)"
-    if ([string]::IsNullOrWhiteSpace($OASIS_GATEWAY_HOST)) {
-        Write-Error "Gateway host cannot be empty"
-        exit 1
-    }
-    
-    # Gateway port
-    $portInput = Read-Host "Enter O.A.S.I.S. Gateway port [8444]"
-    if ([string]::IsNullOrWhiteSpace($portInput)) {
-        $script:OASIS_GATEWAY_PORT = "8444"
-    } else {
-        $script:OASIS_GATEWAY_PORT = $portInput
-    }
-    
-    # API Key
-    $script:OASIS_API_KEY = Read-Host "Enter O.A.S.I.S. API key"
-    if ([string]::IsNullOrWhiteSpace($OASIS_API_KEY)) {
-        Write-Error "API key cannot be empty"
-        exit 1
-    }
-    
-    # Tenant ID
-    $script:OASIS_TENANT_ID = Read-Host "Enter O.A.S.I.S. Tenant ID (UUID)"
-    if ([string]::IsNullOrWhiteSpace($OASIS_TENANT_ID)) {
-        Write-Error "Tenant ID cannot be empty"
-        exit 1
-    }
-    
-    # CA Certificate
-    $script:OASIS_CA_CERT_PATH = Read-Host "Enter path to O.A.S.I.S. CA certificate"
-    if (-not (Test-Path $OASIS_CA_CERT_PATH)) {
-        Write-Error "CA certificate not found at: $OASIS_CA_CERT_PATH"
-        exit 1
-    }
-    
-    Write-Host ""
-    Write-Info "Configuration complete"
     Write-Host "  Gateway: ${OASIS_GATEWAY_HOST}:${OASIS_GATEWAY_PORT}"
     Write-Host "  Tenant:  ${OASIS_TENANT_ID}"
+    Write-Host "  API Key: ${OASIS_API_KEY}"
     Write-Host ""
 }
 
@@ -216,8 +214,10 @@ function New-Configuration {
     New-Item -ItemType Directory -Path $LOG_DIR -Force | Out-Null
     New-Item -ItemType Directory -Path $STORAGE_DIR -Force | Out-Null
     
-    # Copy CA certificate
-    Copy-Item -Path $OASIS_CA_CERT_PATH -Destination (Join-Path $CONFIG_DIR "oasis-ca.pem") -Force
+    # Write embedded CA certificate
+    $certPath = Join-Path $CONFIG_DIR "oasis-ca.pem"
+    Set-Content -Path $certPath -Value $OASIS_CA_CERT -Encoding UTF8
+    Write-Info "CA certificate written to $certPath"
     
     # Create main configuration
     $mainConfig = @"
@@ -401,7 +401,7 @@ function Main {
         exit 1
     }
     
-    Get-Configuration
+    Show-Configuration
     Install-FluentBit
     Register-Agent
     New-Configuration
