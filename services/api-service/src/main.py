@@ -311,6 +311,105 @@ async def services_status(current_user: dict = Depends(get_current_user)):
         )
 
 
+@app.get("/stats/metrics")
+async def get_system_metrics(current_user: dict = Depends(get_current_user)):
+    """
+    Get system-wide metrics (total logs, sources, ingestion rate)
+
+    Admin-only endpoint for platform statistics
+    """
+    # Only platform admins can view system-wide metrics
+    if current_user["credential_type"] != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators can access system metrics",
+        )
+
+    try:
+        metrics = {
+            "total_logs": 0,
+            "total_sources": 0,
+            "ingestion_rate": 0.0,
+        }
+
+        # Get total logs across all tenants from ClickHouse
+        if ch_client:
+            try:
+                # Get all log tables (one per tenant)
+                tables_result = ch_client.query(
+                    f"""
+                    SELECT name 
+                    FROM system.tables 
+                    WHERE database = '{settings.CLICKHOUSE_DB}' 
+                    AND name LIKE 'logs_%'
+                    """
+                )
+
+                total_logs = 0
+                for row in tables_result.result_rows:
+                    table_name = row[0]
+                    count_result = ch_client.query(
+                        f"SELECT count() FROM {settings.CLICKHOUSE_DB}.{table_name}"
+                    )
+                    if count_result.result_rows:
+                        total_logs += count_result.result_rows[0][0]
+
+                metrics["total_logs"] = total_logs
+
+                # Calculate ingestion rate (logs per second in last 5 minutes)
+                ingestion_rate = 0.0
+                for row in tables_result.result_rows:
+                    table_name = row[0]
+                    # Check if ingested_at column exists
+                    cols_result = ch_client.query(
+                        f"""
+                        SELECT name FROM system.columns
+                        WHERE database = '{settings.CLICKHOUSE_DB}' 
+                        AND table = '{table_name}'
+                        AND name IN ('ingested_at', 'indexed_at', 'timestamp')
+                        LIMIT 1
+                        """
+                    )
+
+                    if cols_result.result_rows:
+                        time_col = cols_result.result_rows[0][0]
+                        rate_result = ch_client.query(
+                            f"""
+                            SELECT count() / 300.0 as rate
+                            FROM {settings.CLICKHOUSE_DB}.{table_name}
+                            WHERE {time_col} >= now() - INTERVAL 5 MINUTE
+                            """
+                        )
+                        if rate_result.result_rows:
+                            ingestion_rate += rate_result.result_rows[0][0]
+
+                metrics["ingestion_rate"] = round(ingestion_rate, 2)
+
+            except Exception as e:
+                logger.warning("clickhouse_metrics_failed", error=str(e))
+
+        # Get total sources (unique agent hostnames) from PostgreSQL
+        if pg_pool:
+            try:
+                async with pg_pool.acquire() as conn:
+                    # Count unique agent hostnames across all tenants
+                    sources_result = await conn.fetchval(
+                        "SELECT COUNT(DISTINCT hostname) FROM agents WHERE hostname IS NOT NULL"
+                    )
+                    metrics["total_sources"] = sources_result or 0
+            except Exception as e:
+                logger.warning("postgres_sources_failed", error=str(e))
+
+        return metrics
+
+    except Exception as e:
+        logger.error("metrics_query_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch system metrics: {str(e)}",
+        )
+
+
 @app.post("/auth/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """

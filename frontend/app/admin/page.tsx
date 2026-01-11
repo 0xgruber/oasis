@@ -46,6 +46,14 @@ export default function AdminHomePage() {
   const [servicesError, setServicesError] = useState<string | null>(null);
   const [selectedService, setSelectedService] = useState<ServiceStatus | null>(null);
   const [showModal, setShowModal] = useState(false);
+  
+  // Metrics state
+  const [metrics, setMetrics] = useState({
+    totalLogs: 0,
+    totalSources: 0,
+    ingestionRate: 0,
+  });
+  const [metricsLoading, setMetricsLoading] = useState(true);
 
   // Format uptime seconds to human-readable string
   const formatUptime = (seconds: number): string => {
@@ -116,10 +124,39 @@ export default function AdminHomePage() {
     }
   };
 
+  // Fetch system metrics
+  const fetchMetrics = async () => {
+    try {
+      const token = tokenUtils.getToken();
+      if (!token) return;
+
+      const response = await fetch('/api/stats/metrics', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMetrics({
+          totalLogs: data.total_logs || 0,
+          totalSources: data.total_sources || 0,
+          ingestionRate: data.ingestion_rate || 0,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch metrics:', error);
+    } finally {
+      setMetricsLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (user) {
       fetchServiceStatus();
-      const interval = setInterval(fetchServiceStatus, 30000);
+      fetchMetrics();
+      const interval = setInterval(() => {
+        fetchServiceStatus();
+        fetchMetrics();
+      }, 30000);
       return () => clearInterval(interval);
     }
   }, [user]);
@@ -175,9 +212,24 @@ export default function AdminHomePage() {
         {/* System Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
-            { label: 'Total Logs', value: '0', icon: '📝', color: theme === 'cyber' ? 'var(--primary)' : '#3b82f6' },
-            { label: 'Sources', value: '0', icon: '📡', color: theme === 'cyber' ? 'var(--primary)' : '#10b981' },
-            { label: 'Ingestion Rate', value: '0/s', icon: '⚡', color: theme === 'cyber' ? 'var(--primary)' : '#f59e0b' },
+            { 
+              label: 'Total Logs', 
+              value: metricsLoading ? '...' : metrics.totalLogs.toLocaleString(), 
+              icon: '📝', 
+              color: theme === 'cyber' ? 'var(--primary)' : '#3b82f6' 
+            },
+            { 
+              label: 'Sources', 
+              value: metricsLoading ? '...' : metrics.totalSources.toString(), 
+              icon: '📡', 
+              color: theme === 'cyber' ? 'var(--primary)' : '#10b981' 
+            },
+            { 
+              label: 'Ingestion Rate', 
+              value: metricsLoading ? '...' : `${metrics.ingestionRate}/s`, 
+              icon: '⚡', 
+              color: theme === 'cyber' ? 'var(--primary)' : '#f59e0b' 
+            },
             { 
               label: 'System Status', 
               value: servicesLoading ? '...' : `${healthyServices}/${totalServices}`, 
