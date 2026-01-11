@@ -129,10 +129,20 @@ load_tenant_config() {
         exit 1
     fi
     
-    # Source the configuration file
-    set +u  # Temporarily disable undefined variable check
-    source "$TENANT_CONFIG"
-    set -u
+    # Parse the configuration file (only key=value lines, skip comments and cert)
+    while IFS='=' read -r key value; do
+        # Skip empty lines, comments, and certificate lines
+        if [[ -z "$key" ]] || [[ "$key" =~ ^[[:space:]]*# ]] || [[ "$key" =~ ^----- ]]; then
+            continue
+        fi
+        # Remove leading/trailing whitespace
+        key=$(echo "$key" | xargs)
+        value=$(echo "$value" | xargs)
+        # Export the variable
+        if [[ -n "$key" ]] && [[ -n "$value" ]]; then
+            export "$key=$value"
+        fi
+    done < "$TENANT_CONFIG"
     
     # Validate required variables
     if [ -z "$OASIS_GATEWAY_HOST" ]; then
