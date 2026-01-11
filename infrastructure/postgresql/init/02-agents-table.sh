@@ -3,7 +3,7 @@ set -e
 
 ###############################################################################
 # PostgreSQL Migration: Add Agents Table
-# Tracks Vector log collection agents per tenant
+# Tracks log collection agents (Fluent Bit, Filebeat, etc.) per tenant
 ###############################################################################
 
 echo "========================================"
@@ -11,12 +11,12 @@ echo "Creating agents table..."
 echo "========================================"
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-    -- Agents table (tracks Vector log collection agents)
+    -- Agents table (tracks log collection agents)
     CREATE TABLE IF NOT EXISTS agents (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
         hostname VARCHAR(255) NOT NULL,
-        agent_type VARCHAR(50) NOT NULL DEFAULT 'vector',
+        agent_type VARCHAR(50) NOT NULL DEFAULT 'fluent-bit',
         os_type VARCHAR(50) NOT NULL,
         os_version VARCHAR(100),
         agent_version VARCHAR(50),

@@ -1,6 +1,6 @@
 """
 Agent Registration Endpoint
-Allows Vector agents to register and update their status
+Allows log collection agents (Fluent Bit, Filebeat, etc.) to register and update their status
 """
 
 from typing import Optional, Dict, Any
@@ -22,10 +22,12 @@ class AgentRegistration(BaseModel):
     """Agent registration request model"""
 
     hostname: str = Field(..., description="Hostname of the machine running the agent")
-    agent_type: str = Field(default="vector", description="Type of agent (default: vector)")
+    agent_type: str = Field(
+        default="fluent-bit", description="Type of agent (e.g., fluent-bit, filebeat, telegraf)"
+    )
     os_type: str = Field(..., description="Operating system type (e.g., linux, macos, windows)")
     os_version: Optional[str] = Field(None, description="OS version string")
-    agent_version: Optional[str] = Field(None, description="Agent/Vector version")
+    agent_version: Optional[str] = Field(None, description="Agent version")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
 
 
@@ -48,9 +50,9 @@ async def register_agent(
     tenant_info: dict = Depends(validate_tenant_api_key),
 ) -> AgentRegistrationResponse:
     """
-    Register or update a Vector agent for the authenticated tenant
+    Register or update a log collection agent for the authenticated tenant
 
-    This endpoint allows Vector agents to register themselves with O.A.S.I.S.
+    This endpoint allows log collection agents to register themselves with O.A.S.I.S.
     If the agent (identified by tenant_id + hostname) already exists, its
     last_seen timestamp and metadata will be updated.
 

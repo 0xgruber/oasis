@@ -30,7 +30,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) for PR ti
 **Examples:**
 - `feat: add multi-tenant log ingestion with rate limiting`
 - `fix: resolve ClickHouse connection timeout on startup`
-- `docs: update Vector agent deployment guide`
+- `docs: update Fluent Bit agent deployment guide`
 - `chore: fix typo in README`
 
 ### Chore PRs (Skip Heavy CI)
@@ -64,7 +64,7 @@ If your change only updates documentation, fixes typos, or performs other non-fu
 Please follow the Git workflow documented in [GIT_WORKFLOW.md](./GIT_WORKFLOW.md):
 
 1. **Branch from `develop`**: All feature branches start from `develop`
-2. **Use descriptive branch names**: `feature/add-vector-agent`, `fix/clickhouse-timeout`
+2. **Use descriptive branch names**: `feature/add-fluent-bit-agent`, `fix/clickhouse-timeout`
 3. **Keep commits atomic**: One logical change per commit
 4. **Write clear commit messages**: Follow conventional commit format
 5. **Rebase before PR**: Ensure your branch is up-to-date with `develop`

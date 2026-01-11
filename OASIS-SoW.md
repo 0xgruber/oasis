@@ -109,7 +109,7 @@ The objective is to architect and develop an open-source, AI-driven Security Inf
 
 * **Cloud Hosting:** While the architecture is scalable, the initial build targets local/on-premise deployment.  
 * **Proprietary LLM APIs:** Support for GPT-4/Claude API is deprioritized in favor of Local LLM/Privacy focus.  
-* **Legacy Agents:** Building custom endpoint agents (EDR); we assume log shipping is handled by existing tools (like Fluentd/Vector).
+* **Legacy Agents:** Building custom endpoint agents (EDR); we assume log shipping is handled by existing tools (like Fluentd/Fluent Bit).
 
 ### ---
 

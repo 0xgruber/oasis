@@ -52,7 +52,7 @@ O.A.S.I.S. uses a three-subnet architecture for defense in depth:
 
 ### Log Collection
 
-- **Vector Agents**: Deployed on Windows/Linux/macOS endpoints with example configurations included
+- **Fluent Bit Agents**: Lightweight, production-ready log collectors for Windows/Linux/macOS
 - **Syslog**: UDP/TCP/TLS support for network devices and legacy systems
 - **Direct HTTP/JSON**: API endpoints for custom integrations
 
@@ -78,7 +78,7 @@ O.A.S.I.S. uses a three-subnet architecture for defense in depth:
 - Core infrastructure (gateways, ingestion, storage)
 - Multi-tenant database architecture
 - SOC portal with comprehensive configuration UI
-- Vector agent integration
+- Fluent Bit agent integration
 - CI/CD pipeline with security scanning
 
 ### Phase 2: Visibility (Weeks 8-12)
@@ -131,7 +131,7 @@ This project is in active development. The OpenSpec proposal for Phase 1 is curr
 oasis/
 ├── backend/           # Python/FastAPI services (coming soon)
 ├── frontend/          # Next.js application (coming soon)
-├── infrastructure/    # Docker, configs, Vector examples (coming soon)
+├── infrastructure/    # Docker, configs, Fluent Bit examples (coming soon)
 ├── docs/             # Documentation (coming soon)
 ├── openspec/         # OpenSpec specifications and proposals
 ├── LICENSE           # MIT License
@@ -142,7 +142,7 @@ oasis/
 ## Acknowledgments
 
 - **OCSF**: Open Cybersecurity Schema Framework for log normalization
-- **Vector**: High-performance log collection agent by Datadog
+- **Fluent Bit**: High-performance, lightweight log collection agent by Calyptia
 - **Ollama**: Local LLM inference engine
 - **Model Context Protocol (MCP)**: Standard for LLM-application integration
 

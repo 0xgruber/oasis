@@ -548,7 +548,7 @@ Track requests across microservices for performance debugging.
 
 **Example Trace:**
 ```
-Vector Agent → Gateway (5ms) → Ingestion (15ms) → ClickHouse (25ms) → Total: 45ms
+Fluent Bit Agent → Gateway (5ms) → Ingestion (15ms) → ClickHouse (25ms) → Total: 45ms
 ```
 
 **Use Cases:**
