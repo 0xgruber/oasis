@@ -5,6 +5,7 @@ HTTP/JSON log ingestion endpoint
 from typing import List, Dict, Any
 import ssl
 import os
+from datetime import datetime
 
 import structlog
 from fastapi import APIRouter, Request, Depends, HTTPException, status
@@ -43,35 +44,10 @@ class IngestResponse(BaseModel):
     tenant_id: str
 
 
-@router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_202_ACCEPTED)
-async def ingest_logs(
-    batch: LogBatch,
-    request: Request,
-    tenant_info: dict = Depends(validate_tenant_api_key),
+async def _forward_to_ingestion_service(
+    tenant_id: str, tenant_name: str, batch: LogBatch
 ) -> IngestResponse:
-    """
-    Ingest a batch of logs from authenticated tenant
-
-    Args:
-        batch: Batch of log entries
-        request: FastAPI request object
-        tenant_info: Validated tenant information from API key
-
-    Returns:
-        Ingestion response with accepted/rejected counts
-    """
-    tenant_id = request.state.tenant_id
-    tenant_name = request.state.tenant_name
-
-    logger.info(
-        "ingestion_request_received",
-        tenant_id=tenant_id,
-        tenant_name=tenant_name,
-        log_count=len(batch.logs),
-    )
-
-    # TODO: Implement rate limiting based on tenant EPS limit
-
+    """Helper to forward logs to ingestion service"""
     try:
         # Create SSL context for mTLS
         ssl_context = None
@@ -151,3 +127,94 @@ async def ingest_logs(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Ingestion service unavailable",
         )
+
+
+@router.post(
+    "/ingest/fluentbit", response_model=IngestResponse, status_code=status.HTTP_202_ACCEPTED
+)
+async def ingest_logs_fluentbit(
+    raw_logs: List[Dict[str, Any]],
+    request: Request,
+    tenant_info: dict = Depends(validate_tenant_api_key),
+) -> IngestResponse:
+    """
+    Ingest logs from Fluent Bit in native format
+
+    Fluent Bit sends: [{"date": timestamp, "field1": "value1", ...}, ...]
+    We transform to LogEntry format
+    """
+    tenant_id = request.state.tenant_id
+    tenant_name = request.state.tenant_name
+
+    logger.info(
+        "fluentbit_ingestion_request_received",
+        tenant_id=tenant_id,
+        tenant_name=tenant_name,
+        log_count=len(raw_logs),
+    )
+
+    # Transform Fluent Bit format to LogEntry format
+    logs = []
+    for entry in raw_logs:
+        # Extract timestamp (Fluent Bit uses 'date' field)
+        timestamp = entry.get("date", "")
+        if isinstance(timestamp, (int, float)):
+            timestamp = datetime.fromtimestamp(timestamp).isoformat()
+
+        # Extract message field (try multiple common field names)
+        message = entry.get("message") or entry.get("log") or str(entry)
+
+        # Extract or infer source
+        source = entry.get("source") or entry.get("systemd_unit") or "fluent-bit"
+
+        # Create metadata from all other fields
+        metadata = {
+            k: v
+            for k, v in entry.items()
+            if k not in ["date", "message", "log", "source", "timestamp", "severity"]
+        }
+
+        logs.append(
+            LogEntry(
+                timestamp=timestamp,
+                message=message,
+                severity=entry.get("severity", "informational"),
+                source=source,
+                metadata=metadata,
+            )
+        )
+
+    # Create batch and forward to existing logic
+    batch = LogBatch(logs=logs)
+    return await _forward_to_ingestion_service(tenant_id, tenant_name, batch)
+
+
+@router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_202_ACCEPTED)
+async def ingest_logs(
+    batch: LogBatch,
+    request: Request,
+    tenant_info: dict = Depends(validate_tenant_api_key),
+) -> IngestResponse:
+    """
+    Ingest a batch of logs from authenticated tenant
+
+    Args:
+        batch: Batch of log entries
+        request: FastAPI request object
+        tenant_info: Validated tenant information from API key
+
+    Returns:
+        Ingestion response with accepted/rejected counts
+    """
+    tenant_id = request.state.tenant_id
+    tenant_name = request.state.tenant_name
+
+    logger.info(
+        "ingestion_request_received",
+        tenant_id=tenant_id,
+        tenant_name=tenant_name,
+        log_count=len(batch.logs),
+    )
+
+    # TODO: Implement rate limiting based on tenant EPS limit
+    return await _forward_to_ingestion_service(tenant_id, tenant_name, batch)

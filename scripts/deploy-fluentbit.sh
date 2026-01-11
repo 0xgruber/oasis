@@ -516,31 +516,20 @@ create_config() {
     Name                      modify
     Match                     *
     Add                       tenant_id $OASIS_TENANT_ID
-    Add                       hostname \${HOSTNAME}
-    Add                       source_type fluent-bit
-    Add                       agent_type fluent-bit
+    Add                       source \${HOSTNAME}
 
 # ============================================
-# Filter: Nest systemd fields
-# ============================================
-[FILTER]
-    Name                      nest
-    Match                     host.systemd
-    Operation                 nest
-    Wildcard                  *
-    Nest_under                data
-    Remove_prefix             _
-
-# ============================================
-# Output: O.A.S.I.S. Internal Gateway
+# Output: O.A.S.I.S. Internal Gateway (Fluent Bit endpoint)
 # ============================================
 [OUTPUT]
     Name                      http
     Match                     *
     Host                      $OASIS_GATEWAY_HOST
     Port                      $OASIS_GATEWAY_PORT
-    URI                       /api/v1/ingest
+    URI                       /api/v1/ingest/fluentbit
     Format                    json
+    json_date_key             date
+    json_date_format          epoch
     Header                    Authorization Bearer $OASIS_API_KEY
     tls                       On
     tls.verify                On
