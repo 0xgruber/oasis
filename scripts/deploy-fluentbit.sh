@@ -682,7 +682,7 @@ main() {
     check_root
     load_tenant_config
     detect_os
-    check_os_support
+    validate_os_version
     
     install_fluent_bit
     register_agent
