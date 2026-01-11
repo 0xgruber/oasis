@@ -1,6 +1,6 @@
 # O.A.S.I.S. Documentation Index
 
-**Last Updated:** 2026-01-09
+**Last Updated:** 2026-01-11
 
 Complete catalog of project documentation organized by category.
 
@@ -50,6 +50,7 @@ Complete catalog of project documentation organized by category.
 | [services/internal-gateway/README.md](services/internal-gateway/README.md) | Internal gateway service documentation | Developers |
 | [services/ingestion-service/README.md](services/ingestion-service/README.md) | Ingestion service documentation | Developers |
 | [services/api-service/README.md](services/api-service/README.md) | API service documentation | Developers |
+| [services/metrics-service/README.md](services/metrics-service/README.md) | Metrics service documentation | Developers |
 
 ### Frontend
 | Document | Description | Audience |

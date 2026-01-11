@@ -41,9 +41,11 @@ O.A.S.I.S. uses a three-subnet architecture for defense in depth:
 - **Gateways (External/Internal)**: Smart ingestion points with API key authentication, rate limiting, and input validation
 - **Ingestion Service**: OCSF normalization and routing to appropriate storage backends
 - **API Service**: Authentication, log queries, configuration management for web portals
+- **Metrics Service**: Real-time metrics aggregation with Redis caching for system, tenant, and agent statistics
 - **Storage Layer**:
   - ClickHouse: Columnar log storage with per-tenant tables and high compression
   - PostgreSQL: Application data (tenants, users, API keys, configuration, audit logs)
+  - Redis: Cache layer for computed metrics (30-60s TTL)
   - Qdrant: Vector database for semantic search (Phase 3)
 - **Web Portals**:
   - SOC Portal: Comprehensive management interface for security operations teams
@@ -60,7 +62,7 @@ O.A.S.I.S. uses a three-subnet architecture for defense in depth:
 
 - **Backend**: Python 3.11+ with FastAPI
 - **Frontend**: Next.js 14+ with React, TypeScript, and Tailwind CSS
-- **Databases**: ClickHouse (logs), PostgreSQL (app data), Qdrant (vectors)
+- **Databases**: ClickHouse (logs), PostgreSQL (app data), Redis (cache), Qdrant (vectors)
 - **AI/LLM**: Ollama serving local models (Llama-3, Mistral) with MCP integration
 - **Deployment**: Docker Compose for development, multi-host Docker for production
 - **CI/CD**: GitHub Actions with security scanning (Trivy, Syft, gitleaks)
