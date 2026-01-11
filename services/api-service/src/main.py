@@ -106,8 +106,9 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user_id: str
+    credential_id: str
     tenant_id: Optional[str]
-    role: str
+    credential_type: str
 
 
 class HealthResponse(BaseModel):
@@ -274,8 +275,11 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 
     return {
         "user_id": user_id,
+        "credential_id": payload.get("credential_id"),
+        "credential_type": payload.get("credential_type", "customer_user"),
         "tenant_id": payload.get("tenant_id"),
-        "role": payload.get("role", "tenant_user"),
+        "username": payload.get("username"),
+        "email": payload.get("email"),
     }
 
 
@@ -312,23 +316,35 @@ async def login(request: LoginRequest):
     """
     Authenticate user and return JWT token
 
-    Default credentials: admin / Admin123!
+    Credentials:
+    - SOC Analyst: user.soc / admin123
+    - Platform Admin: user.admin / admin123
     """
     if not pg_pool:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
     async with pg_pool.acquire() as conn:
-        # Get user from database
+        # Get credential from database with user join
         row = await conn.fetchrow(
             """
-            SELECT id, tenant_id, username, password_hash, role, is_active
-            FROM users
-            WHERE username = $1
+            SELECT 
+                c.credential_id,
+                c.user_id,
+                c.username,
+                c.password_hash,
+                c.credential_type,
+                c.is_active,
+                u.email,
+                u.full_name,
+                u.tenant_id
+            FROM credentials c
+            JOIN users u ON c.user_id = u.id
+            WHERE c.username = $1 AND c.is_active = true
             """,
             request.username,
         )
 
-        if not row or not row["is_active"]:
+        if not row:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid username or password",
@@ -341,34 +357,38 @@ async def login(request: LoginRequest):
                 detail="Invalid username or password",
             )
 
-        # Update last login
+        # Update last_used_at for credential
         await conn.execute(
-            "UPDATE users SET last_login_at = NOW() WHERE id = $1",
-            row["id"],
+            "UPDATE credentials SET last_used_at = NOW() WHERE credential_id = $1",
+            row["credential_id"],
         )
 
-        # Create JWT token
+        # Create JWT token with new structure
         token_data = {
-            "sub": str(row["id"]),
-            "tenant_id": str(row["tenant_id"]) if row["tenant_id"] else None,
-            "role": row["role"],
+            "sub": str(row["user_id"]),
+            "credential_id": str(row["credential_id"]),
+            "credential_type": row["credential_type"],
             "username": row["username"],
+            "email": row["email"],
+            "tenant_id": str(row["tenant_id"]) if row["tenant_id"] else None,
         }
 
         access_token = create_access_token(token_data)
 
         logger.info(
             "user_login_success",
-            user_id=str(row["id"]),
+            user_id=str(row["user_id"]),
+            credential_id=str(row["credential_id"]),
             username=row["username"],
-            role=row["role"],
+            credential_type=row["credential_type"],
         )
 
         return LoginResponse(
             access_token=access_token,
-            user_id=str(row["id"]),
+            user_id=str(row["user_id"]),
+            credential_id=str(row["credential_id"]),
             tenant_id=str(row["tenant_id"]) if row["tenant_id"] else None,
-            role=row["role"],
+            credential_type=row["credential_type"],
         )
 
 
@@ -608,8 +628,8 @@ async def update_global_message(
     if not pg_pool:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can update the global message",
@@ -670,8 +690,8 @@ async def get_smtp_config(current_user: dict = Depends(get_current_user)):
     if not pg_pool:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can view SMTP configuration",
@@ -736,8 +756,8 @@ async def update_smtp_config(
     if not pg_pool:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can update SMTP configuration",
@@ -836,8 +856,8 @@ async def test_smtp_config(
     if not pg_pool:
         raise HTTPException(status_code=500, detail="Database not initialized")
 
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can test SMTP configuration",
@@ -965,8 +985,8 @@ async def list_users(
 
     Supports pagination and filtering by role and active status.
     """
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can list users",
@@ -1054,7 +1074,7 @@ async def get_user(
     Get specific user details (admin only or own profile)
     """
     # Users can view their own profile, admins can view any profile
-    if current_user["user_id"] != user_id and current_user["role"] not in ["super_admin", "admin"]:
+    if current_user["user_id"] != user_id and current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only view your own profile",
@@ -1109,8 +1129,8 @@ async def create_user(
 
     For inviting users via email, use POST /users/invite instead.
     """
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can create users",
@@ -1198,8 +1218,8 @@ async def invite_user(
     Generates a temporary password and sends an invitation email.
     User will need to use "Forgot Password" flow to set their own password.
     """
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can invite users",
@@ -1330,8 +1350,8 @@ async def update_user(
 
     Can update email, role, and active status.
     """
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can update users",
@@ -1438,8 +1458,8 @@ async def delete_user(
 
     Actually deactivates the user instead of hard delete for audit purposes.
     """
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can delete users",
@@ -1498,8 +1518,8 @@ async def reset_user_password(
 
     Generates a new temporary password and sends it via email.
     """
-    # Check if user has admin role
-    if current_user["role"] not in ["super_admin", "admin"]:
+    # Check if user has admin credentials
+    if current_user["credential_type"] != "platform_admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only administrators can reset user passwords",

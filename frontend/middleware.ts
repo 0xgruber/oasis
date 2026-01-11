@@ -4,19 +4,23 @@ import type { NextRequest } from 'next/server'
 /**
  * O.A.S.I.S. Route-Based Access Control Middleware
  * 
- * Enforces role-based access control for the three-portal architecture:
- * - /admin/* → platform_admin ONLY
- * - /dashboard/* → soc_analyst + platform_admin (S.O.C.A.P.)
+ * Enforces credential-based exclusive access control for the three-portal architecture:
+ * - /admin/* → platform_admin credentials ONLY
+ * - /dashboard/* → soc_analyst credentials ONLY
  * - /login → Public (unauthenticated only)
+ * 
+ * Each credential grants access to ONE portal only (exclusive access model).
  */
 
 const TOKEN_KEY = 'oasis_token';
 
 interface JWTPayload {
-  user_id: string;
-  tenant_id: string;
+  sub: string;  // user_id
+  credential_id: string;
+  credential_type: string;
   username: string;
-  role: string;
+  email: string;
+  tenant_id: string;
   exp?: number;
   iat?: number;
 }
@@ -62,12 +66,17 @@ export function middleware(request: NextRequest) {
   const isPublicPath = publicPaths.some(path => pathname.startsWith(path));
   
   if (isPublicPath) {
-    // If already authenticated and trying to access /login, redirect to dashboard
+    // If already authenticated and trying to access /login, redirect to appropriate portal
     const token = request.cookies.get(TOKEN_KEY)?.value;
     if (token && pathname === '/login') {
       const payload = decodeToken(token);
       if (payload && !isTokenExpired(payload)) {
-        return NextResponse.redirect(new URL('/dashboard', request.url));
+        // Redirect based on credential type
+        if (payload.credential_type === 'soc_analyst') {
+          return NextResponse.redirect(new URL('/dashboard', request.url));
+        } else if (payload.credential_type === 'platform_admin') {
+          return NextResponse.redirect(new URL('/admin', request.url));
+        }
       }
     }
     return NextResponse.next();
@@ -102,42 +111,42 @@ export function middleware(request: NextRequest) {
   }
   
   // ===================================================================
-  // ROLE-BASED ACCESS CONTROL
+  // CREDENTIAL-BASED EXCLUSIVE ACCESS CONTROL
   // ===================================================================
   
-  const userRole = payload.role;
+  const credentialType = payload.credential_type;
   
-  // Admin Portal - platform_admin ONLY
+  // Admin Portal - platform_admin credentials ONLY
   if (pathname.startsWith('/admin')) {
-    if (userRole !== 'platform_admin') {
-      // Unauthorized → redirect to dashboard with error message
-      const dashboardUrl = new URL('/dashboard', request.url);
-      dashboardUrl.searchParams.set('error', 'access_denied');
-      return NextResponse.redirect(dashboardUrl);
-    }
-  }
-  
-  // S.O.C.A.P. (SOC Analyst Portal) - soc_analyst + platform_admin
-  // /dashboard, /settings (personal settings)
-  // Note: /admin/* routes handled separately above
-  if (pathname.startsWith('/dashboard') || pathname.startsWith('/settings')) {
-    // SOC analysts and platform admins can access
-    if (userRole !== 'soc_analyst' && userRole !== 'platform_admin') {
-      // Customer users should not access SOC portal
-      // For now, redirect to login (will be customer portal in Phase 2D)
+    if (credentialType !== 'platform_admin') {
+      // Wrong credentials → redirect to login with error
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('error', 'wrong_portal');
+      loginUrl.searchParams.set('message', 'Please log in with admin credentials to access the admin portal');
       return NextResponse.redirect(loginUrl);
     }
   }
   
-  // Root redirect - send to appropriate portal based on role
+  // SOC Portal - soc_analyst credentials ONLY
+  if (pathname.startsWith('/dashboard') || pathname.startsWith('/settings')) {
+    if (credentialType !== 'soc_analyst') {
+      // Wrong credentials → redirect to login with error
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('error', 'wrong_portal');
+      loginUrl.searchParams.set('message', 'Please log in with SOC analyst credentials to access the SOC portal');
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+  
+  // Root redirect - send to appropriate portal based on credential type
   if (pathname === '/') {
-    if (userRole === 'platform_admin' || userRole === 'soc_analyst') {
+    if (credentialType === 'soc_analyst') {
       return NextResponse.redirect(new URL('/dashboard', request.url));
-    } else if (userRole === 'customer_user') {
-      // For now, redirect to dashboard (will be customer portal in Phase 2D)
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+    } else if (credentialType === 'platform_admin') {
+      return NextResponse.redirect(new URL('/admin', request.url));
+    } else if (credentialType === 'customer_user') {
+      // For now, redirect to login (will be customer portal in Phase 2D)
+      return NextResponse.redirect(new URL('/login', request.url));
     }
   }
   

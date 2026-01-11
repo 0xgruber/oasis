@@ -31,7 +31,19 @@ export const tokenUtils = {
           .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
           .join('')
       );
-      return JSON.parse(jsonPayload);
+      const payload = JSON.parse(jsonPayload);
+      
+      // Map JWT payload fields to User interface
+      return {
+        user_id: payload.sub,
+        credential_id: payload.credential_id,
+        credential_type: payload.credential_type,
+        username: payload.username,
+        email: payload.email,
+        tenant_id: payload.tenant_id,
+        exp: payload.exp,
+        iat: payload.iat,
+      };
     } catch (error) {
       console.error('Failed to decode token:', error);
       return null;

@@ -1,66 +1,59 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { tokenUtils } from '@/lib/auth';
 import ProtectedRoute from '@/components/ProtectedRoute';
-import Link from 'next/link';
+
+interface ServiceStatus {
+  name: string;
+  status: string;
+  state: string;
+}
 
 /**
  * Admin Portal Home Page
  * 
- * Landing page for platform administrators
- * Shows overview and quick links to admin functions
+ * Shows system-wide metrics and status
  */
 export default function AdminHomePage() {
   const { user } = useAuth();
   const { theme } = useTheme();
+  const [services, setServices] = useState<ServiceStatus[]>([]);
+  const [servicesLoading, setServicesLoading] = useState(true);
 
-  const adminSections = [
-    {
-      title: 'User Management',
-      description: 'Manage user accounts, roles, and permissions',
-      href: '/admin/users',
-      icon: '👥',
-      color: theme === 'cyber' ? 'var(--primary)' : '#3b82f6',
-    },
-    {
-      title: 'System Settings',
-      description: 'Configure global system defaults and thresholds',
-      href: '/admin/settings',
-      icon: '⚙️',
-      color: theme === 'cyber' ? 'var(--primary)' : '#8b5cf6',
-    },
-    {
-      title: 'Tenant Management',
-      description: 'Manage tenants, API keys, and configurations',
-      href: '/dashboard/settings',
-      icon: '🏢',
-      color: theme === 'cyber' ? 'var(--primary)' : '#10b981',
-    },
-    {
-      title: 'Agent Monitoring',
-      description: 'View and manage all agents across tenants (Coming in Phase 2B)',
-      href: '#',
-      icon: '📡',
-      color: '#94a3b8',
-      disabled: true,
-    },
-    {
-      title: 'Audit Logs',
-      description: 'View audit trail of all sensitive operations (Coming in Phase 2E)',
-      href: '#',
-      icon: '📋',
-      color: '#94a3b8',
-      disabled: true,
-    },
-    {
-      title: 'API Keys',
-      description: 'Global API key management and monitoring',
-      href: '/dashboard/settings',
-      icon: '🔑',
-      color: theme === 'cyber' ? 'var(--primary)' : '#f59e0b',
-    },
-  ];
+  // Fetch service status
+  const fetchServiceStatus = async () => {
+    try {
+      const token = tokenUtils.getToken();
+      if (!token) return;
+
+      const response = await fetch('/api/services/status', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setServices(data.services || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch service status:', error);
+    } finally {
+      setServicesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchServiceStatus();
+      const interval = setInterval(fetchServiceStatus, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
+
+  const healthyServices = services.filter(s => s.status === 'healthy' && s.state === 'running').length;
+  const totalServices = services.length;
 
   const cardClass = theme === 'cyber' 
     ? 'terminal-card rounded-lg p-6' 
@@ -95,23 +88,26 @@ export default function AdminHomePage() {
           </p>
         </div>
 
-        {/* Admin Functions Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {adminSections.map((section) => (
-            <Link
-              key={section.title}
-              href={section.disabled ? '#' : section.href}
-              className={`${cardClass} transition-all duration-200 ${
-                section.disabled 
-                  ? 'opacity-50 cursor-not-allowed' 
-                  : 'hover:scale-105 cursor-pointer'
-              }`}
+        {/* System Metrics */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[
+            { label: 'Total Logs', value: '0', icon: '📝', color: theme === 'cyber' ? 'var(--primary)' : '#3b82f6' },
+            { label: 'Sources', value: '0', icon: '📡', color: theme === 'cyber' ? 'var(--primary)' : '#10b981' },
+            { label: 'Ingestion Rate', value: '0/s', icon: '⚡', color: theme === 'cyber' ? 'var(--primary)' : '#f59e0b' },
+            { 
+              label: 'System Status', 
+              value: servicesLoading ? '...' : `${healthyServices}/${totalServices}`, 
+              icon: '🖥️', 
+              color: healthyServices === totalServices ? (theme === 'cyber' ? 'var(--primary)' : '#10b981') : '#ef4444'
+            },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className={cardClass}
               style={{ 
                 background: 'var(--card-bg)',
-                border: theme === 'cyber' ? '2px solid var(--card-border)' : undefined,
-                textDecoration: 'none',
+                border: theme === 'cyber' ? '2px solid var(--card-border)' : undefined
               }}
-              onClick={(e) => section.disabled && e.preventDefault()}
             >
               {theme === 'cyber' && (
                 <div className="terminal-dots">
@@ -120,46 +116,36 @@ export default function AdminHomePage() {
                   <div className="terminal-dot"></div>
                 </div>
               )}
-              
-              <div className="flex items-start gap-4">
-                <div 
-                  className="text-4xl flex-shrink-0"
-                  style={{ 
-                    filter: section.disabled ? 'grayscale(100%)' : 'none',
-                  }}
-                >
-                  {section.icon}
-                </div>
-                <div className="flex-1">
-                  <h3 
-                    className={`text-lg font-semibold mb-2 ${theme === 'cyber' ? 'text-glow-subtle' : ''}`}
-                    style={{ color: section.disabled ? '#94a3b8' : 'var(--text-primary)' }}
-                  >
-                    {section.title}
-                  </h3>
+              <div className="flex items-center justify-between">
+                <div>
                   <p 
-                    className="text-sm"
+                    className="text-sm mb-1"
                     style={{ color: 'var(--text-secondary)' }}
                   >
-                    {section.description}
+                    {stat.label}
+                  </p>
+                  <p 
+                    className={`text-3xl font-bold ${theme === 'cyber' ? 'text-glow-subtle' : ''}`}
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {stat.value}
                   </p>
                 </div>
-              </div>
-
-              {!section.disabled && (
                 <div 
-                  className="mt-4 text-sm font-medium flex items-center gap-2"
-                  style={{ color: section.color }}
+                  className="text-4xl"
+                  style={{ 
+                    filter: theme === 'cyber' ? 'drop-shadow(0 0 10px currentColor)' : 'none',
+                    color: stat.color
+                  }}
                 >
-                  <span>Access</span>
-                  <span>→</span>
+                  {stat.icon}
                 </div>
-              )}
-            </Link>
+              </div>
+            </div>
           ))}
         </div>
 
-        {/* System Info */}
+        {/* Platform Info */}
         <div 
           className={cardClass}
           style={{ 
@@ -186,20 +172,22 @@ export default function AdminHomePage() {
               <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Phase 2A</p>
             </div>
             <div>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Role</p>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Credential</p>
               <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Platform Admin</p>
             </div>
             <div>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Portal Mode</p>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Architecture</p>
               <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Three-Portal</p>
             </div>
             <div>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Status</p>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Services</p>
               <p 
                 className="text-lg font-semibold" 
-                style={{ color: theme === 'cyber' ? 'var(--primary)' : '#10b981' }}
+                style={{ color: healthyServices === totalServices ? (theme === 'cyber' ? 'var(--primary)' : '#10b981') : '#ef4444' }}
               >
-                Operational
+                {servicesLoading ? 'Loading...' : 
+                  healthyServices === totalServices ? 'Operational' : `${healthyServices}/${totalServices} Up`
+                }
               </p>
             </div>
           </div>

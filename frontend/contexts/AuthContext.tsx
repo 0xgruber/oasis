@@ -44,8 +44,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const decoded = tokenUtils.decodeToken(access_token);
       setUser(decoded);
 
-      // Redirect to dashboard
-      router.push('/dashboard');
+      // Redirect based on credential type
+      if (decoded.credential_type === 'soc_analyst') {
+        router.push('/dashboard');
+      } else if (decoded.credential_type === 'platform_admin') {
+        router.push('/admin');
+      } else {
+        // customer_user or unknown - redirect to login for now
+        router.push('/login');
+      }
     } catch (err: any) {
       // Don't set error state - let caller handle the error
       throw err;

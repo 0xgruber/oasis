@@ -58,13 +58,19 @@ export interface LoginRequest {
 export interface LoginResponse {
   access_token: string;
   token_type: string;
+  user_id: string;
+  credential_id: string;
+  tenant_id: string;
+  credential_type: string;
 }
 
 export interface User {
   user_id: string;
-  tenant_id: string;
+  credential_id: string;
+  credential_type: string;
   username: string;
-  role: string;
+  email: string;
+  tenant_id: string;
 }
 
 export interface LogEntry {

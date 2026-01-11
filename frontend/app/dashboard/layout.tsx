@@ -23,15 +23,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { name: 'Logs', href: '/dashboard/logs', icon: '📝' },
     { name: 'Analytics', href: '/dashboard/analytics', icon: '📈' },
     { name: 'Alerts', href: '/dashboard/alerts', icon: '🔔' },
+    { name: 'Tenant Settings', href: '/dashboard/settings', icon: '🏢' },
   ];
 
-  const settingsNavigation = 
-    user?.role === 'platform_admin'
-      ? [
-          { name: 'User Management', href: '/admin/users', icon: '👥' },
-          { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
-        ]
-      : [];
+  // No admin links in SOC portal - admins must use separate admin credentials
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--background)' }}>
@@ -87,45 +82,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </Link>
             );
           })}
-          
-          {/* Settings Section - Only show for admins */}
-          {settingsNavigation.length > 0 && (
-            <div className="mt-6 pt-6" style={{ borderTop: `1px solid var(--sidebar-border)` }}>
-              <div className="px-3 mb-2">
-                <span className="text-xs font-semibold uppercase" style={{ color: 'var(--text-secondary)', opacity: 0.5 }}>
-                  Settings
-                </span>
-              </div>
-              {settingsNavigation.map((item) => {
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={`flex items-center px-3 py-3 mb-2 rounded-lg text-sm font-medium transition-colors ${
-                      isActive
-                        ? theme === 'cyber' 
-                          ? 'text-white' 
-                          : 'bg-blue-600 text-white'
-                        : theme === 'cyber'
-                          ? 'hover:text-white'
-                          : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-                    }`}
-                    style={isActive ? { 
-                      background: theme === 'cyber' ? 'var(--primary)' : undefined,
-                      boxShadow: theme === 'cyber' ? '0 0 20px rgba(0, 255, 159, 0.3)' : undefined,
-                      color: theme === 'cyber' ? '#0a0e27' : undefined
-                    } : {
-                      color: theme === 'cyber' ? 'var(--text-secondary)' : undefined
-                    }}
-                  >
-                    <span className="mr-3 text-lg">{item.icon}</span>
-                    {item.name}
-                  </Link>
-                );
-              })}
-            </div>
-          )}
         </nav>
 
         {/* User Menu */}

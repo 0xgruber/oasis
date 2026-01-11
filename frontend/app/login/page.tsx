@@ -43,7 +43,7 @@ export default function LoginPage() {
           {/* Logo/Title */}
           <div className="text-center mb-8">
             <h1 className="text-4xl font-bold text-white mb-2">O.A.S.I.S.</h1>
-            <p className="text-slate-400 text-sm">SOC Portal</p>
+            <p className="text-slate-400 text-sm">Security Operations Portal</p>
           </div>
 
           {/* Login Form */}
@@ -91,9 +91,17 @@ export default function LoginPage() {
 
           {/* Default Credentials Note (Development Only) */}
           <div className="mt-6 p-4 bg-slate-900 rounded-lg border border-slate-700">
-            <p className="text-xs text-slate-400 text-center">
-              Default: <span className="text-slate-300">admin</span> / <span className="text-slate-300">Admin123!</span>
-            </p>
+            <p className="text-xs font-semibold text-slate-300 mb-2 text-center">Development Credentials:</p>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between items-center p-2 bg-slate-800 rounded">
+                <span className="text-slate-400">SOC Analyst:</span>
+                <span className="text-blue-400 font-mono">user.soc / Admin123!</span>
+              </div>
+              <div className="flex justify-between items-center p-2 bg-slate-800 rounded">
+                <span className="text-slate-400">Platform Admin:</span>
+                <span className="text-purple-400 font-mono">user.admin / Admin123!</span>
+              </div>
+            </div>
           </div>
         </div>
 
