@@ -1,0 +1,474 @@
+#!/bin/bash
+###############################################################################
+# O.A.S.I.S. Fluent Bit Agent Deployment Script (Linux)
+# 
+# This script installs and configures Fluent Bit for log collection
+# and forwards logs to the O.A.S.I.S. Internal Gateway.
+#
+# Prerequisites:
+#   - Root/sudo access
+#   - Network connectivity to O.A.S.I.S. Gateway
+#   - Valid API key and CA certificate
+#
+# Usage:
+#   sudo ./deploy-fluentbit.sh
+#
+###############################################################################
+
+set -e  # Exit on error
+set -u  # Exit on undefined variable
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Script configuration
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLUENT_BIT_VERSION="3.0.3"
+INSTALL_DIR="/opt/fluent-bit"
+CONFIG_DIR="/etc/fluent-bit"
+LOG_DIR="/var/log/fluent-bit"
+SERVICE_NAME="fluent-bit"
+
+# O.A.S.I.S. Configuration (will be prompted)
+OASIS_GATEWAY_HOST=""
+OASIS_GATEWAY_PORT="8444"
+OASIS_API_KEY=""
+OASIS_TENANT_ID=""
+OASIS_CA_CERT_PATH=""
+
+###############################################################################
+# Helper Functions
+###############################################################################
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        log_error "This script must be run as root (use sudo)"
+        exit 1
+    fi
+}
+
+detect_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$ID
+        OS_VERSION=$VERSION_ID
+    else
+        log_error "Cannot detect OS. /etc/os-release not found."
+        exit 1
+    fi
+    
+    log_info "Detected OS: $OS $OS_VERSION"
+}
+
+check_dependencies() {
+    local missing_deps=()
+    
+    for cmd in curl wget systemctl; do
+        if ! command -v $cmd &> /dev/null; then
+            missing_deps+=($cmd)
+        fi
+    done
+    
+    if [ ${#missing_deps[@]} -ne 0 ]; then
+        log_error "Missing dependencies: ${missing_deps[*]}"
+        log_info "Installing dependencies..."
+        
+        case $OS in
+            ubuntu|debian)
+                apt-get update
+                apt-get install -y curl wget systemd
+                ;;
+            centos|rhel|fedora)
+                yum install -y curl wget systemd
+                ;;
+            *)
+                log_error "Unsupported OS for automatic dependency installation"
+                exit 1
+                ;;
+        esac
+    fi
+    
+    log_success "All dependencies present"
+}
+
+prompt_config() {
+    log_info "=== O.A.S.I.S. Configuration ==="
+    echo
+    
+    # Gateway host
+    read -p "Enter O.A.S.I.S. Gateway host (IP or hostname): " OASIS_GATEWAY_HOST
+    if [ -z "$OASIS_GATEWAY_HOST" ]; then
+        log_error "Gateway host cannot be empty"
+        exit 1
+    fi
+    
+    # Gateway port (default 8444)
+    read -p "Enter O.A.S.I.S. Gateway port [8444]: " input_port
+    OASIS_GATEWAY_PORT="${input_port:-8444}"
+    
+    # API Key
+    read -p "Enter O.A.S.I.S. API key: " OASIS_API_KEY
+    if [ -z "$OASIS_API_KEY" ]; then
+        log_error "API key cannot be empty"
+        exit 1
+    fi
+    
+    # Tenant ID
+    read -p "Enter O.A.S.I.S. Tenant ID (UUID): " OASIS_TENANT_ID
+    if [ -z "$OASIS_TENANT_ID" ]; then
+        log_error "Tenant ID cannot be empty"
+        exit 1
+    fi
+    
+    # CA Certificate
+    read -p "Enter path to O.A.S.I.S. CA certificate: " OASIS_CA_CERT_PATH
+    if [ ! -f "$OASIS_CA_CERT_PATH" ]; then
+        log_error "CA certificate not found at: $OASIS_CA_CERT_PATH"
+        exit 1
+    fi
+    
+    echo
+    log_info "Configuration complete"
+    echo "  Gateway: $OASIS_GATEWAY_HOST:$OASIS_GATEWAY_PORT"
+    echo "  Tenant:  $OASIS_TENANT_ID"
+    echo
+}
+
+install_fluent_bit() {
+    log_info "Installing Fluent Bit $FLUENT_BIT_VERSION..."
+    
+    case $OS in
+        ubuntu|debian)
+            # Add Fluent Bit GPG key
+            curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fluentbit-keyring.gpg
+            
+            # Add Fluent Bit repository
+            echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/$(lsb_release -cs) $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/fluent-bit.list
+            
+            # Update and install
+            apt-get update
+            apt-get install -y fluent-bit
+            ;;
+            
+        centos|rhel|fedora)
+            # Add Fluent Bit repository
+            cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
+[fluent-bit]
+name=Fluent Bit
+baseurl=https://packages.fluentbit.io/centos/\$releasever/\$basearch/
+gpgcheck=1
+gpgkey=https://packages.fluentbit.io/fluentbit.key
+enabled=1
+EOF
+            
+            # Install
+            yum install -y fluent-bit
+            ;;
+            
+        *)
+            log_error "Unsupported OS: $OS"
+            log_info "Please install Fluent Bit manually from: https://docs.fluentbit.io/manual/installation/linux"
+            exit 1
+            ;;
+    esac
+    
+    log_success "Fluent Bit installed successfully"
+}
+
+register_agent() {
+    log_info "Registering agent with O.A.S.I.S...."
+    
+    local hostname=$(hostname)
+    local os_type="Linux"
+    local os_version="$OS $OS_VERSION"
+    local agent_version=$(fluent-bit --version | head -n1 | awk '{print $3}')
+    
+    # Register agent via API
+    local response=$(curl -s -w "\n%{http_code}" -X POST \
+        "https://${OASIS_GATEWAY_HOST}:${OASIS_GATEWAY_PORT}/api/v1/agents/register" \
+        -H "Authorization: Bearer ${OASIS_API_KEY}" \
+        -H "Content-Type: application/json" \
+        --cacert "$OASIS_CA_CERT_PATH" \
+        -d "{
+            \"hostname\": \"${hostname}\",
+            \"agent_type\": \"fluent-bit\",
+            \"os_type\": \"${os_type}\",
+            \"os_version\": \"${os_version}\",
+            \"agent_version\": \"${agent_version}\",
+            \"metadata\": {
+                \"deployment_script\": \"deploy-fluentbit.sh\",
+                \"deployment_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+            }
+        }")
+    
+    local http_code=$(echo "$response" | tail -n1)
+    local body=$(echo "$response" | sed '$d')
+    
+    if [ "$http_code" -eq 200 ] || [ "$http_code" -eq 201 ]; then
+        log_success "Agent registered successfully"
+    else
+        log_warning "Agent registration returned HTTP $http_code"
+        log_warning "Response: $body"
+        log_info "Continuing with deployment..."
+    fi
+}
+
+create_config() {
+    log_info "Creating Fluent Bit configuration..."
+    
+    # Create config directory
+    mkdir -p "$CONFIG_DIR"
+    
+    # Copy CA certificate
+    cp "$OASIS_CA_CERT_PATH" "$CONFIG_DIR/oasis-ca.pem"
+    chmod 644 "$CONFIG_DIR/oasis-ca.pem"
+    
+    # Create main configuration
+    cat > "$CONFIG_DIR/fluent-bit.conf" <<EOF
+[SERVICE]
+    Flush                     5
+    Daemon                    Off
+    Log_Level                 info
+    Log_File                  $LOG_DIR/fluent-bit.log
+    Parsers_File              parsers.conf
+    storage.path              /var/lib/fluent-bit/
+    storage.sync              normal
+    storage.checksum          off
+    storage.max_chunks_up     128
+    storage.backlog.mem_limit 50M
+
+# ============================================
+# Input: systemd journal logs
+# ============================================
+[INPUT]
+    Name                      systemd
+    Tag                       host.systemd
+    Read_From_Tail            On
+    Strip_Underscores         On
+    Lowercase                 On
+    storage.type              filesystem
+
+# ============================================
+# Input: syslog
+# ============================================
+[INPUT]
+    Name                      syslog
+    Path                      /var/log/syslog
+    Tag                       host.syslog
+    Read_From_Head            Off
+    storage.type              filesystem
+
+# ============================================
+# Filter: Add metadata
+# ============================================
+[FILTER]
+    Name                      modify
+    Match                     *
+    Add                       tenant_id $OASIS_TENANT_ID
+    Add                       hostname \${HOSTNAME}
+    Add                       source_type fluent-bit
+    Add                       agent_type fluent-bit
+
+# ============================================
+# Filter: Nest systemd fields
+# ============================================
+[FILTER]
+    Name                      nest
+    Match                     host.systemd
+    Operation                 nest
+    Wildcard                  *
+    Nest_under                data
+    Remove_prefix             _
+
+# ============================================
+# Output: O.A.S.I.S. Internal Gateway
+# ============================================
+[OUTPUT]
+    Name                      http
+    Match                     *
+    Host                      $OASIS_GATEWAY_HOST
+    Port                      $OASIS_GATEWAY_PORT
+    URI                       /api/v1/ingest
+    Format                    json
+    Header                    Authorization Bearer $OASIS_API_KEY
+    tls                       On
+    tls.verify                On
+    tls.ca_file               $CONFIG_DIR/oasis-ca.pem
+    Retry_Limit               5
+    storage.total_limit_size  500M
+    net.keepalive             On
+    net.keepalive_idle_timeout 30
+
+EOF
+    
+    # Create parsers configuration
+    cat > "$CONFIG_DIR/parsers.conf" <<EOF
+[PARSER]
+    Name                      syslog-rfc3164
+    Format                    regex
+    Regex                     /^<(?<pri>[0-9]+)>(?<time>[^ ]* {1,2}[^ ]* [^ ]*) (?<host>[^ ]*) (?<ident>[a-zA-Z0-9_\/\.\-]*)(?:\[(?<pid>[0-9]+)\])?(?:[^\:]*\:)? *(?<message>.*)$/
+    Time_Key                  time
+    Time_Format               %b %d %H:%M:%S
+    Time_Keep                 On
+
+[PARSER]
+    Name                      syslog-rfc5424
+    Format                    regex
+    Regex                     /^\<(?<pri>[0-9]{1,5})\>1 (?<time>[^ ]+) (?<host>[^ ]+) (?<ident>[^ ]+) (?<pid>[-0-9]+) (?<msgid>[^ ]+) (?<extradata>(\[.*\]|-)) (?<message>.+)$/
+    Time_Key                  time
+    Time_Format               %Y-%m-%dT%H:%M:%S.%L%z
+    Time_Keep                 On
+
+[PARSER]
+    Name                      json
+    Format                    json
+    Time_Key                  time
+    Time_Format               %Y-%m-%dT%H:%M:%S.%L
+    Time_Keep                 On
+
+EOF
+    
+    # Create log directory
+    mkdir -p "$LOG_DIR"
+    mkdir -p /var/lib/fluent-bit
+    
+    # Set permissions
+    chmod 644 "$CONFIG_DIR/fluent-bit.conf"
+    chmod 644 "$CONFIG_DIR/parsers.conf"
+    chmod 755 "$LOG_DIR"
+    chmod 755 /var/lib/fluent-bit
+    
+    log_success "Configuration created at $CONFIG_DIR"
+}
+
+create_systemd_service() {
+    log_info "Creating systemd service..."
+    
+    cat > "/etc/systemd/system/$SERVICE_NAME.service" <<EOF
+[Unit]
+Description=Fluent Bit - Log Forwarder for O.A.S.I.S.
+Documentation=https://docs.fluentbit.io/manual/
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/fluent-bit/bin/fluent-bit -c $CONFIG_DIR/fluent-bit.conf
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fluent-bit
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$LOG_DIR /var/lib/fluent-bit
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target
+
+EOF
+    
+    # Reload systemd
+    systemctl daemon-reload
+    
+    log_success "Systemd service created"
+}
+
+start_service() {
+    log_info "Starting Fluent Bit service..."
+    
+    # Enable service to start on boot
+    systemctl enable "$SERVICE_NAME"
+    
+    # Start service
+    systemctl start "$SERVICE_NAME"
+    
+    # Wait a moment for service to start
+    sleep 2
+    
+    # Check status
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        log_success "Fluent Bit service started successfully"
+        systemctl status "$SERVICE_NAME" --no-pager
+    else
+        log_error "Failed to start Fluent Bit service"
+        log_info "Check logs with: journalctl -u $SERVICE_NAME -f"
+        exit 1
+    fi
+}
+
+print_summary() {
+    echo
+    log_success "=== Deployment Complete ==="
+    echo
+    echo "Configuration files:"
+    echo "  - Main config:   $CONFIG_DIR/fluent-bit.conf"
+    echo "  - Parsers:       $CONFIG_DIR/parsers.conf"
+    echo "  - CA cert:       $CONFIG_DIR/oasis-ca.pem"
+    echo
+    echo "Log files:"
+    echo "  - Fluent Bit:    $LOG_DIR/fluent-bit.log"
+    echo "  - Systemd:       journalctl -u $SERVICE_NAME -f"
+    echo
+    echo "Service commands:"
+    echo "  - Status:        systemctl status $SERVICE_NAME"
+    echo "  - Start:         systemctl start $SERVICE_NAME"
+    echo "  - Stop:          systemctl stop $SERVICE_NAME"
+    echo "  - Restart:       systemctl restart $SERVICE_NAME"
+    echo "  - Logs:          journalctl -u $SERVICE_NAME -f"
+    echo
+    log_info "Logs are now being forwarded to O.A.S.I.S."
+    echo
+}
+
+###############################################################################
+# Main Execution
+###############################################################################
+
+main() {
+    echo
+    log_info "=== O.A.S.I.S. Fluent Bit Deployment ==="
+    echo
+    
+    check_root
+    detect_os
+    check_dependencies
+    prompt_config
+    
+    install_fluent_bit
+    register_agent
+    create_config
+    create_systemd_service
+    start_service
+    
+    print_summary
+}
+
+# Run main function
+main
