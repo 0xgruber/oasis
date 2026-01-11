@@ -40,49 +40,16 @@ INSTALL_DIR="/opt/fluent-bit"
 CONFIG_DIR="/etc/fluent-bit"
 LOG_DIR="/var/log/fluent-bit"
 SERVICE_NAME="fluent-bit"
+TENANT_CONFIG="/etc/oasis/tenant.conf"
 
-# O.A.S.I.S. Configuration (hardcoded)
-OASIS_GATEWAY_HOST="192.168.5.32"
-OASIS_GATEWAY_PORT="8444"
-OASIS_API_KEY="oasis_pk_FfCjHivG-Q-QN2lBD7Dl6-YQtoPaPnKEJsqXVLEkWwo"
-OASIS_TENANT_ID="ffffffff-ffff-ffff-ffff-ffffffffffff"
+# Tenant Configuration (will be loaded from tenant.conf)
+OASIS_GATEWAY_HOST=""
+OASIS_GATEWAY_PORT=""
+OASIS_API_KEY=""
+OASIS_TENANT_ID=""
 
-# Embedded CA Certificate (will be written to disk)
-read -r -d '' OASIS_CA_CERT << 'EOF'
------BEGIN CERTIFICATE-----
-MIIFuTCCA6GgAwIBAgIUKwFNPfUo/loTyNkxG+VWj4LdjXEwDQYJKoZIhvcNAQEL
-BQAwbDELMAkGA1UEBhMCVVMxEzARBgNVBAgMCkNhbGlmb3JuaWExFjAUBgNVBAcM
-DVNhbiBGcmFuY2lzY28xEzARBgNVBAoMCk8uQS5TLkkuUy4xGzAZBgNVBAMMEk8u
-QS5TLkkuUy4gUm9vdCBDQTAeFw0yNjAxMTAxNTAxMzJaFw0zNjAxMDgxNTAxMzJa
-MGwxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRYwFAYDVQQHDA1T
-YW4gRnJhbmNpc2NvMRMwEQYDVQQKDApPLkEuUy5JLlMuMRswGQYDVQQDDBJPLkEu
-Uy5JLlMuIFJvb3QgQ0EwggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQDo
-YPSd32EPvVYJ0w8azP1vPj9v3f931aPgFdjNYYM6BnsG5t6NJ15olHcRoxlhpEAv
-0aznPHpdVv8zXHr72ghHbN+AoMAPv9Lh3QilChQs1PN3JlAhU1tV69RZ9fUzRijC
-P1GAKPNYCRPjbPaVo0KXNXmafmPe5h0MTbjPBwlMJVI8zeOKPwrUhaozu5MEhNsl
-OhtEHBBaoSLR7WYtVkgw3cB/EomUqbMmjL9/Jihys8qXyTZ4GEqNbSEQMUvFU8Kx
-IV6VN4RNsJn7Cf4/P+Yzienzdj6woruIMitLlpm+/7xQrUZukAsCHtdw4zFz7xTA
-5Pk3hCSd4a5IwUVOMxQ1GJulMMFsaEfj3Z3aemI7qPHE2mjCFMgFNwXki4wvc1BU
-RKfhUbLjj+3tmzL62Ux7MJyBM8aLBlfIhY0ZduegI0jhANxWDSyIV7k5lVlAtzwZ
-5nyHSqTO6BqvVIxZX0i0omQ0ENwKfiWDkeyLki6Ehc2KTDRZvno6uXOKODFNCNY9
-M06fqPoc2eDKpJDnXefYFYU53mmBjIb6gWyMzO1DtOprt6/9AN39kKYLQqH40/sm
-wg8FT1kvU+PuB4qNCErpH1cvgq6wKLGoPBGF5FMqYo+ySHJCY8sUQY18DP/7bwpc
-NasqiTDiSUdH58Iy5ORgiOCEii170kKm4nB/fksUIQIDAQABo1MwUTAdBgNVHQ4E
-FgQUaiWuWh6S5NDtKgoiYOp8+a11bkowHwYDVR0jBBgwFoAUaiWuWh6S5NDtKgoi
-YOp8+a11bkowDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAgEAhwE+
-8OvZ3zS1am1VPA+MQhTN/NgQfLpQU3KXBpEof1MwJs8uxOnLLmcJE8qYuhK6J4TM
-0V8HI86aZjSf5GPz3fRqN2KsUHgTOhiSz2Z85DxbeIh+qi6+n2+jGzhlbEBs+ZfV
-jL1cMuaLoqHPO2gEW7Gsrgoa1xibSU9ZbkQ5XAVEX9SpWZTmLFpAnQ2jsPYnQsfq
-Dkbe1AfNxGTdOhhsf91Ce9VzpT9nGTWDekj+dCK/n0a4t0iXE5hz7VMhgV9mwubu
-JkJVe1sLC/xv9PT1lkAqbafHJDvBulPAE4RdsPcO65JITvP8AdnQG46ubR2d3hPm
-nhc+6n2md7Db1P1dap+yl9qhrp4ox2f9PkVMbUm56NlZtt/tTbmeT1bmkIovG2B+
-MR2HTVrrVJp3FDtJw5AlL4Ks6fMXA1eLp2zKsqUCr3nqNngCSpQorTDhTjeg5hNh
-4d3my7FgksmV2nc2HuLuusuSa2a6wHbYLPKP9TD8t/S8uxc9j6XySGM5Bop14bWW
-4/vwNFnGPD/nvdvQNt6ZeHTmvMnfRLmV6tjeeeUVI/MbPTpGF6FmzOua6FW8iSiY
-2XET9qTHjyekF+rfjeM2SNjAf/BUjyyiXciMWXWV8HpVkBcAZFBsh9FcbyN/qu22
-rwxt2UiUp2EGtMav9nV450T6zXI74DV8KJQQRsE=
------END CERTIFICATE-----
-EOF
+# CA Certificate (will be extracted from tenant.conf)
+OASIS_CA_CERT=""
 
 ###############################################################################
 # Helper Functions
@@ -109,6 +76,64 @@ check_root() {
         log_error "This script must be run as root (use sudo)"
         exit 1
     fi
+}
+
+load_tenant_config() {
+    log_info "Loading tenant configuration from $TENANT_CONFIG..."
+    
+    if [ ! -f "$TENANT_CONFIG" ]; then
+        log_error "Tenant configuration file not found: $TENANT_CONFIG"
+        log_error ""
+        log_error "Please create $TENANT_CONFIG with the following content:"
+        log_error ""
+        log_error "OASIS_GATEWAY_HOST=your.gateway.host"
+        log_error "OASIS_GATEWAY_PORT=8444"
+        log_error "OASIS_API_KEY=your_api_key"
+        log_error "OASIS_TENANT_ID=your_tenant_uuid"
+        log_error ""
+        log_error "You can generate this file from the O.A.S.I.S. Dashboard."
+        exit 1
+    fi
+    
+    # Source the configuration file
+    set +u  # Temporarily disable undefined variable check
+    source "$TENANT_CONFIG"
+    set -u
+    
+    # Validate required variables
+    if [ -z "$OASIS_GATEWAY_HOST" ]; then
+        log_error "OASIS_GATEWAY_HOST not set in $TENANT_CONFIG"
+        exit 1
+    fi
+    
+    if [ -z "$OASIS_API_KEY" ]; then
+        log_error "OASIS_API_KEY not set in $TENANT_CONFIG"
+        exit 1
+    fi
+    
+    if [ -z "$OASIS_TENANT_ID" ]; then
+        log_error "OASIS_TENANT_ID not set in $TENANT_CONFIG"
+        exit 1
+    fi
+    
+    # Set default port if not specified
+    OASIS_GATEWAY_PORT="${OASIS_GATEWAY_PORT:-8444}"
+    
+    # Extract CA certificate from config file
+    OASIS_CA_CERT=$(sed -n '/#--- BEGIN OASIS CA CERTIFICATE ---/,/#--- END OASIS CA CERTIFICATE ---/p' "$TENANT_CONFIG" | \
+                    grep -v "^#" | grep -v "^$")
+    
+    if [ -z "$OASIS_CA_CERT" ]; then
+        log_error "CA certificate not found in $TENANT_CONFIG"
+        log_error "Please ensure the certificate is embedded between:"
+        log_error "  #--- BEGIN OASIS CA CERTIFICATE ---"
+        log_error "  #--- END OASIS CA CERTIFICATE ---"
+        exit 1
+    fi
+    
+    log_success "Tenant configuration loaded successfully"
+    log_info "  Gateway: $OASIS_GATEWAY_HOST:$OASIS_GATEWAY_PORT"
+    log_info "  Tenant:  $OASIS_TENANT_ID"
 }
 
 detect_os() {
@@ -262,15 +287,6 @@ check_dependencies() {
     fi
     
     log_success "All dependencies present"
-}
-
-show_config() {
-    log_info "=== O.A.S.I.S. Configuration ==="
-    echo
-    echo "  Gateway: $OASIS_GATEWAY_HOST:$OASIS_GATEWAY_PORT"
-    echo "  Tenant:  $OASIS_TENANT_ID"
-    echo "  API Key: ${OASIS_API_KEY:0:20}..."
-    echo
 }
 
 install_fluent_bit() {
@@ -654,9 +670,9 @@ main() {
     echo
     
     check_root
+    load_tenant_config
     detect_os
-    check_dependencies
-    show_config
+    check_os_support
     
     install_fluent_bit
     register_agent
