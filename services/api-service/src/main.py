@@ -316,13 +316,13 @@ async def get_system_metrics(current_user: dict = Depends(get_current_user)):
     """
     Get system-wide metrics (total logs, sources, ingestion rate)
 
-    Admin-only endpoint for platform statistics
+    Accessible by platform admins and SOC analysts
     """
-    # Only platform admins can view system-wide metrics
-    if current_user["credential_type"] != "platform_admin":
+    # Allow both platform admins and SOC analysts
+    if current_user["credential_type"] not in ["platform_admin", "soc_analyst"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only platform administrators can access system metrics",
+            detail="Only platform administrators and SOC analysts can access system metrics",
         )
 
     try:

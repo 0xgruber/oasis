@@ -1,12 +1,55 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
+import { tokenUtils } from '@/lib/auth';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const { theme } = useTheme();
+  
+  // Metrics state
+  const [metrics, setMetrics] = useState({
+    totalLogs: 0,
+    totalSources: 0,
+    ingestionRate: 0,
+  });
+  const [metricsLoading, setMetricsLoading] = useState(true);
+
+  // Fetch system metrics
+  const fetchMetrics = async () => {
+    try {
+      const token = tokenUtils.getToken();
+      if (!token) return;
+
+      const response = await fetch('/api/stats/metrics', {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMetrics({
+          totalLogs: data.total_logs || 0,
+          totalSources: data.total_sources || 0,
+          ingestionRate: data.ingestion_rate || 0,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch metrics:', error);
+    } finally {
+      setMetricsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user) {
+      fetchMetrics();
+      const interval = setInterval(fetchMetrics, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   const cardClass = theme === 'cyber' 
     ? 'terminal-card rounded-lg p-6' 
@@ -44,10 +87,30 @@ export default function DashboardPage() {
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
-            { label: 'Total Logs', value: '0', icon: '📝', color: 'blue' },
-            { label: 'Active Alerts', value: '0', icon: '🔔', color: 'red' },
-            { label: 'Sources', value: '0', icon: '📡', color: 'green' },
-            { label: 'Ingestion Rate', value: '0/s', icon: '⚡', color: 'yellow' },
+            { 
+              label: 'Total Logs', 
+              value: metricsLoading ? '...' : metrics.totalLogs.toLocaleString(), 
+              icon: '📝', 
+              color: 'blue' 
+            },
+            { 
+              label: 'Active Alerts', 
+              value: '0', 
+              icon: '🔔', 
+              color: 'red' 
+            },
+            { 
+              label: 'Sources', 
+              value: metricsLoading ? '...' : metrics.totalSources.toString(), 
+              icon: '📡', 
+              color: 'green' 
+            },
+            { 
+              label: 'Ingestion Rate', 
+              value: metricsLoading ? '...' : `${metrics.ingestionRate}/s`, 
+              icon: '⚡', 
+              color: 'yellow' 
+            },
           ].map((stat) => (
             <div
               key={stat.label}
