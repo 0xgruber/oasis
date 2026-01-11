@@ -129,22 +129,37 @@ async def _forward_to_ingestion_service(
         )
 
 
-@router.post(
-    "/ingest/fluentbit", response_model=IngestResponse, status_code=status.HTTP_202_ACCEPTED
-)
-async def ingest_logs_fluentbit(
-    raw_logs: List[Dict[str, Any]],
+@router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_202_ACCEPTED)
+async def ingest_logs(
     request: Request,
     tenant_info: dict = Depends(validate_tenant_api_key),
 ) -> IngestResponse:
     """
-    Ingest logs from Fluent Bit in native format
+    Ingest logs from Fluent Bit agents in native format
 
-    Fluent Bit sends: [{"date": timestamp, "field1": "value1", ...}, ...]
-    We transform to LogEntry format
+    Accepts Fluent Bit native format: [{"date": timestamp, "message": "...", ...}]
+
+    This endpoint is used by:
+    - Host agents (collecting local system logs)
+    - Collector agents (aggregating syslog from network devices)
+
+    Args:
+        request: FastAPI request object
+        tenant_info: Validated tenant information from API key
+
+    Returns:
+        Ingestion response with accepted/rejected counts
     """
     tenant_id = request.state.tenant_id
     tenant_name = request.state.tenant_name
+
+    # Parse raw body as JSON (Fluent Bit sends array of objects)
+    raw_logs = await request.json()
+
+    if not isinstance(raw_logs, list):
+        raise HTTPException(
+            status_code=400, detail="Expected Fluent Bit format: array of log entries"
+        )
 
     logger.info(
         "fluentbit_ingestion_request_received",
@@ -156,7 +171,7 @@ async def ingest_logs_fluentbit(
     # Transform Fluent Bit format to LogEntry format
     logs = []
     for entry in raw_logs:
-        # Extract timestamp (Fluent Bit uses 'date' field)
+        # Extract timestamp (Fluent Bit uses 'date' field with epoch seconds)
         timestamp = entry.get("date", "")
         if isinstance(timestamp, (int, float)):
             timestamp = datetime.fromtimestamp(timestamp).isoformat()
@@ -164,8 +179,13 @@ async def ingest_logs_fluentbit(
         # Extract message field (try multiple common field names)
         message = entry.get("message") or entry.get("log") or str(entry)
 
-        # Extract or infer source
-        source = entry.get("source") or entry.get("systemd_unit") or "fluent-bit"
+        # Extract source (priority: source > systemd_unit > _HOSTNAME > default)
+        source = (
+            entry.get("source")
+            or entry.get("systemd_unit")
+            or entry.get("_HOSTNAME")
+            or "fluent-bit"
+        )
 
         # Create metadata from all other fields
         metadata = {
@@ -184,37 +204,8 @@ async def ingest_logs_fluentbit(
             )
         )
 
-    # Create batch and forward to existing logic
+    # Create batch and forward to ingestion service
     batch = LogBatch(logs=logs)
-    return await _forward_to_ingestion_service(tenant_id, tenant_name, batch)
-
-
-@router.post("/ingest", response_model=IngestResponse, status_code=status.HTTP_202_ACCEPTED)
-async def ingest_logs(
-    batch: LogBatch,
-    request: Request,
-    tenant_info: dict = Depends(validate_tenant_api_key),
-) -> IngestResponse:
-    """
-    Ingest a batch of logs from authenticated tenant
-
-    Args:
-        batch: Batch of log entries
-        request: FastAPI request object
-        tenant_info: Validated tenant information from API key
-
-    Returns:
-        Ingestion response with accepted/rejected counts
-    """
-    tenant_id = request.state.tenant_id
-    tenant_name = request.state.tenant_name
-
-    logger.info(
-        "ingestion_request_received",
-        tenant_id=tenant_id,
-        tenant_name=tenant_name,
-        log_count=len(batch.logs),
-    )
 
     # TODO: Implement rate limiting based on tenant EPS limit
     return await _forward_to_ingestion_service(tenant_id, tenant_name, batch)

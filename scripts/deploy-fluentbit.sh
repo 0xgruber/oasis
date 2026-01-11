@@ -519,14 +519,14 @@ create_config() {
     Add                       source \${HOSTNAME}
 
 # ============================================
-# Output: O.A.S.I.S. Internal Gateway (Fluent Bit endpoint)
+# Output: O.A.S.I.S. Gateway
 # ============================================
 [OUTPUT]
     Name                      http
     Match                     *
     Host                      $OASIS_GATEWAY_HOST
     Port                      $OASIS_GATEWAY_PORT
-    URI                       /api/v1/ingest/fluentbit
+    URI                       /api/v1/ingest
     Format                    json
     json_date_key             date
     json_date_format          epoch
