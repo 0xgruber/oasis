@@ -16,9 +16,12 @@
 # Prerequisites:
 #   - Root/sudo access
 #   - Network connectivity to O.A.S.I.S. Gateway
-#   - Valid API key and CA certificate
+#   - tenant.conf file (from O.A.S.I.S. Dashboard) in same directory as script
 #
 # Usage:
+#   # 1. Download tenant.conf from O.A.S.I.S. Dashboard
+#   # 2. Place tenant.conf in same directory as this script
+#   # 3. Run:
 #   sudo ./deploy-fluentbit.sh
 #
 ###############################################################################
@@ -78,20 +81,47 @@ check_root() {
     fi
 }
 
+setup_tenant_config() {
+    log_info "Setting up tenant configuration..."
+    
+    # Check if tenant.conf exists in script directory
+    local source_config="$SCRIPT_DIR/tenant.conf"
+    
+    if [ ! -f "$source_config" ]; then
+        log_error "tenant.conf not found in script directory: $SCRIPT_DIR"
+        log_error ""
+        log_error "Please ensure tenant.conf is in the same directory as this script."
+        log_error "You can download this file from the O.A.S.I.S. Dashboard."
+        log_error ""
+        log_error "Expected location: $source_config"
+        exit 1
+    fi
+    
+    # Create /etc/oasis directory if it doesn't exist
+    if [ ! -d "/etc/oasis" ]; then
+        log_info "Creating /etc/oasis directory..."
+        mkdir -p /etc/oasis
+    fi
+    
+    # Copy tenant.conf to /etc/oasis/
+    log_info "Copying tenant.conf to $TENANT_CONFIG..."
+    cp "$source_config" "$TENANT_CONFIG"
+    
+    # Set secure permissions (readable only by root)
+    chmod 600 "$TENANT_CONFIG"
+    chown root:root "$TENANT_CONFIG"
+    
+    log_success "Tenant configuration installed successfully"
+}
+
 load_tenant_config() {
     log_info "Loading tenant configuration from $TENANT_CONFIG..."
     
     if [ ! -f "$TENANT_CONFIG" ]; then
         log_error "Tenant configuration file not found: $TENANT_CONFIG"
         log_error ""
-        log_error "Please create $TENANT_CONFIG with the following content:"
-        log_error ""
-        log_error "OASIS_GATEWAY_HOST=your.gateway.host"
-        log_error "OASIS_GATEWAY_PORT=8444"
-        log_error "OASIS_API_KEY=your_api_key"
-        log_error "OASIS_TENANT_ID=your_tenant_uuid"
-        log_error ""
-        log_error "You can generate this file from the O.A.S.I.S. Dashboard."
+        log_error "This should not happen if setup_tenant_config() was called first."
+        log_error "Please report this issue."
         exit 1
     fi
     
@@ -711,6 +741,7 @@ main() {
     echo
     
     check_root
+    setup_tenant_config
     load_tenant_config
     detect_os
     validate_os_version
