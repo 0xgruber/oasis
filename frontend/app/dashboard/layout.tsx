@@ -7,6 +7,7 @@ import UserMenu from '@/components/UserMenu';
 import ChangeThemeModal from '@/components/ChangeThemeModal';
 import Toast from '@/components/Toast';
 import GlobalMessage from '@/components/GlobalMessage';
+import QueryParamAlert from '@/components/QueryParamAlert';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -25,7 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   ];
 
   const settingsNavigation = 
-    user?.role === 'admin' || user?.role === 'super_admin'
+    user?.role === 'platform_admin'
       ? [
           { name: 'User Management', href: '/users', icon: '👥' },
           { name: 'System Settings', href: '/system-settings', icon: '⚙️' },
@@ -169,6 +170,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         {/* Page Content */}
         <main className="p-6 relative z-10">
+          <QueryParamAlert />
           <GlobalMessage />
           {children}
         </main>
