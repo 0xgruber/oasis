@@ -27,6 +27,7 @@ volumes:
   clickhouse-data:
   postgresql-data:
   qdrant-data:
+  redis-data:
 
 services:
   #############################################################################
@@ -243,6 +244,7 @@ services:
       - JWT_ALGORITHM=HS256
       - JWT_EXPIRATION_MINUTES=60
       - TOTP_ISSUER=O.A.S.I.S.
+      - METRICS_SERVICE_URL=http://metrics-service:8001
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -262,6 +264,55 @@ services:
       clickhouse:
         condition: service_healthy
       postgresql:
+        condition: service_healthy
+      metrics-service:
+        condition: service_healthy
+  
+  metrics-service:
+    build:
+      context: ./services/metrics-service
+      dockerfile: Dockerfile
+    container_name: oasis-metrics-service
+    hostname: metrics-service
+    restart: unless-stopped
+    networks:
+      backend-network:
+        ipv4_address: 172.22.0.41
+    environment:
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_DB=${CLICKHOUSE_DB:-oasis}
+      - CLICKHOUSE_USER=${CLICKHOUSE_ADMIN_USER:-admin}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_ADMIN_PASSWORD:-changeme}
+      - POSTGRES_HOST=postgresql
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-oasis}
+      - POSTGRES_USER=${POSTGRES_USER:-api_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CACHE_TTL_SYSTEM_METRICS=30
+      - CACHE_TTL_TENANT_METRICS=30
+      - CACHE_TTL_AGENT_METRICS=60
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+      redis:
         condition: service_healthy
   
   #############################################################################
@@ -365,3 +416,29 @@ services:
           memory: 2G
         reservations:
           memory: 1G
+  
+  redis:
+    image: redis:7-alpine
+    container_name: oasis-redis
+    hostname: redis
+    restart: unless-stopped
+    networks:
+      backend-network:
+        ipv4_address: 172.22.0.80
+    ports:
+      - "6379:6379"  # Redis (for dev/debugging)
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M

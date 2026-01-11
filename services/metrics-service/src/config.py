@@ -1,18 +1,18 @@
 """
-Configuration settings for API service
+Configuration settings for Metrics service
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """API service configuration"""
+    """Metrics service configuration"""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # ClickHouse configuration (read-only)
     CLICKHOUSE_HOST: str = "clickhouse"
-    CLICKHOUSE_PORT: int = 9000
+    CLICKHOUSE_PORT: int = 8123  # HTTP port for clickhouse-connect
     CLICKHOUSE_DB: str = "oasis"
     CLICKHOUSE_USER: str = "api_user"
     CLICKHOUSE_PASSWORD: str = "changeme"
@@ -24,23 +24,19 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "api_user"
     POSTGRES_PASSWORD: str = "changeme"
 
-    # JWT configuration
-    JWT_SECRET: str = "changeme-generate-secure-secret"
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRATION_MINUTES: int = 60
-
-    # TOTP configuration
-    TOTP_ISSUER: str = "O.A.S.I.S."
+    # Redis configuration
+    REDIS_HOST: str = "redis"
+    REDIS_PORT: int = 6379
+    REDIS_DB: int = 0
+    REDIS_PASSWORD: str | None = None
 
     # Logging
     LOG_LEVEL: str = "INFO"
 
-    # Query limits
-    MAX_QUERY_LIMIT: int = 10000  # Maximum rows per query
-    DEFAULT_QUERY_LIMIT: int = 100  # Default rows per query
-
-    # Metrics service
-    METRICS_SERVICE_URL: str = "http://metrics-service:8001"
+    # Cache TTLs (seconds)
+    CACHE_TTL_SYSTEM_METRICS: int = 30  # System-wide metrics
+    CACHE_TTL_TENANT_METRICS: int = 30  # Per-tenant metrics
+    CACHE_TTL_AGENT_METRICS: int = 60  # Per-agent metrics
 
     @property
     def clickhouse_url(self) -> str:
@@ -51,6 +47,13 @@ class Settings(BaseSettings):
     def postgres_url(self) -> str:
         """Get PostgreSQL connection URL"""
         return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+
+    @property
+    def redis_url(self) -> str:
+        """Get Redis connection URL"""
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
 
 settings = Settings()

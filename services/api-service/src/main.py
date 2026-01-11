@@ -15,6 +15,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 import asyncpg
 import clickhouse_connect
+import httpx
 
 from src.config import settings
 from src.auth import verify_password, create_access_token, decode_access_token
@@ -316,6 +317,8 @@ async def get_system_metrics(current_user: dict = Depends(get_current_user)):
     """
     Get system-wide metrics (total logs, sources, ingestion rate)
 
+    Proxies to metrics service
+
     Accessible by platform admins and SOC analysts
     """
     # Allow both platform admins and SOC analysts
@@ -326,84 +329,27 @@ async def get_system_metrics(current_user: dict = Depends(get_current_user)):
         )
 
     try:
-        metrics = {
-            "total_logs": 0,
-            "total_sources": 0,
-            "ingestion_rate": 0.0,
-        }
-
-        # Get total logs across all tenants from ClickHouse
-        if ch_client:
-            try:
-                # Get all log tables (one per tenant)
-                tables_result = ch_client.query(
-                    f"""
-                    SELECT name 
-                    FROM system.tables 
-                    WHERE database = '{settings.CLICKHOUSE_DB}' 
-                    AND name LIKE 'logs_%'
-                    """
-                )
-
-                total_logs = 0
-                for row in tables_result.result_rows:
-                    table_name = row[0]
-                    count_result = ch_client.query(
-                        f"SELECT count() FROM {settings.CLICKHOUSE_DB}.{table_name}"
-                    )
-                    if count_result.result_rows:
-                        total_logs += count_result.result_rows[0][0]
-
-                metrics["total_logs"] = total_logs
-
-                # Calculate ingestion rate (logs per second in last 5 minutes)
-                ingestion_rate = 0.0
-                for row in tables_result.result_rows:
-                    table_name = row[0]
-                    # Check if ingested_at column exists
-                    cols_result = ch_client.query(
-                        f"""
-                        SELECT name FROM system.columns
-                        WHERE database = '{settings.CLICKHOUSE_DB}' 
-                        AND table = '{table_name}'
-                        AND name IN ('ingested_at', 'indexed_at', 'timestamp')
-                        LIMIT 1
-                        """
-                    )
-
-                    if cols_result.result_rows:
-                        time_col = cols_result.result_rows[0][0]
-                        rate_result = ch_client.query(
-                            f"""
-                            SELECT count() / 300.0 as rate
-                            FROM {settings.CLICKHOUSE_DB}.{table_name}
-                            WHERE {time_col} >= now() - INTERVAL 5 MINUTE
-                            """
-                        )
-                        if rate_result.result_rows:
-                            ingestion_rate += rate_result.result_rows[0][0]
-
-                metrics["ingestion_rate"] = round(ingestion_rate, 2)
-
-            except Exception as e:
-                logger.warning("clickhouse_metrics_failed", error=str(e))
-
-        # Get total sources (unique agent hostnames) from PostgreSQL
-        if pg_pool:
-            try:
-                async with pg_pool.acquire() as conn:
-                    # Count unique agent hostnames across all tenants
-                    sources_result = await conn.fetchval(
-                        "SELECT COUNT(DISTINCT hostname) FROM agents WHERE hostname IS NOT NULL"
-                    )
-                    metrics["total_sources"] = sources_result or 0
-            except Exception as e:
-                logger.warning("postgres_sources_failed", error=str(e))
-
-        return metrics
-
+        # Proxy to metrics service
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.METRICS_SERVICE_URL}/metrics/system", timeout=10.0
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        logger.error("metrics_service_http_error", status_code=e.response.status_code, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Metrics service error: {e.response.status_code}",
+        )
+    except httpx.RequestError as e:
+        logger.error("metrics_service_connection_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to connect to metrics service",
+        )
     except Exception as e:
-        logger.error("metrics_query_failed", error=str(e))
+        logger.error("metrics_proxy_failed", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch system metrics: {str(e)}",
