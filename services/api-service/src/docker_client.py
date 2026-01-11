@@ -18,9 +18,11 @@ SERVICE_DESCRIPTIONS = {
     "ingestion-service": "Log ingestion and normalization service. Accepts logs via syslog/HTTP, normalizes to OCSF format, and stores in ClickHouse.",
     "internal-gateway": "Internal network gateway for corporate log sources. Handles authentication, rate limiting, and routing to ingestion service.",
     "external-gateway": "DMZ gateway for internet-facing log sources. First line of defense with strict rate limiting and API key authentication.",
+    "metrics-service": "Real-time metrics aggregation service with Redis caching. Calculates system-wide, per-tenant, and per-agent metrics from ClickHouse and PostgreSQL.",
     "postgresql": "Relational database for tenant metadata, user accounts, API keys, and configuration data. Multi-tenant schema isolation.",
     "clickhouse": "Columnar database for high-performance log storage and analytics. Table-per-tenant architecture for isolation and scalability.",
     "qdrant": "Vector database for AI-powered semantic search and similarity analysis. Enables natural language log queries (Phase 3).",
+    "redis": "In-memory cache for metrics data. Stores pre-calculated metrics with TTL to reduce database load and improve API response times.",
 }
 
 
