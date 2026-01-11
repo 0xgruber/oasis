@@ -5,6 +5,14 @@
 # This script completely removes Fluent Bit and all related configurations
 # from the system.
 #
+# Supported Distributions:
+#   - Debian 12 & 13
+#   - Ubuntu 22.04 LTS and above
+#   - RHEL/Rocky/Alma 9.7+, 10.1+
+#   - CentOS Stream
+#   - Fedora 40+
+#   - openSUSE Tumbleweed & Leap 15+
+#
 # Prerequisites:
 #   - Root/sudo access
 #
@@ -58,6 +66,31 @@ detect_os() {
         log_error "Cannot detect OS. /etc/os-release not found."
         exit 1
     fi
+    
+    # Normalize OS names for package management
+    case $OS in
+        rocky|almalinux|rhel)
+            OS_FAMILY="rhel"
+            ;;
+        centos)
+            OS_FAMILY="centos"
+            ;;
+        fedora)
+            OS_FAMILY="fedora"
+            ;;
+        debian)
+            OS_FAMILY="debian"
+            ;;
+        ubuntu)
+            OS_FAMILY="ubuntu"
+            ;;
+        opensuse*|sles)
+            OS_FAMILY="suse"
+            ;;
+        *)
+            OS_FAMILY=$OS
+            ;;
+    esac
 }
 
 stop_service() {
@@ -91,7 +124,7 @@ remove_service_file() {
 remove_package() {
     log_info "Removing Fluent Bit package..."
     
-    case $OS in
+    case $OS_FAMILY in
         ubuntu|debian)
             if dpkg -l | grep -q fluent-bit; then
                 apt-get remove -y fluent-bit
@@ -112,14 +145,31 @@ remove_package() {
             fi
             ;;
             
-        centos|rhel|fedora)
+        rhel|centos|fedora)
             if rpm -q fluent-bit &> /dev/null; then
-                yum remove -y fluent-bit
+                if command -v dnf &> /dev/null; then
+                    dnf remove -y fluent-bit
+                else
+                    yum remove -y fluent-bit
+                fi
                 
                 # Remove repository
                 if [ -f /etc/yum.repos.d/fluent-bit.repo ]; then
                     rm -f /etc/yum.repos.d/fluent-bit.repo
                 fi
+                
+                log_success "Package removed"
+            else
+                log_info "Package not installed"
+            fi
+            ;;
+            
+        suse)
+            if rpm -q fluent-bit &> /dev/null; then
+                zypper remove -y fluent-bit
+                
+                # Remove repository
+                zypper removerepo fluent-bit 2>/dev/null || true
                 
                 log_success "Package removed"
             else

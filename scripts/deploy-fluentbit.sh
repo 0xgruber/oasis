@@ -5,6 +5,14 @@
 # This script installs and configures Fluent Bit for log collection
 # and forwards logs to the O.A.S.I.S. Internal Gateway.
 #
+# Supported Distributions:
+#   - Debian 12 & 13
+#   - Ubuntu 22.04 LTS and above
+#   - RHEL/Rocky/Alma 9.7+, 10.1+
+#   - CentOS Stream
+#   - Fedora 40+
+#   - openSUSE Tumbleweed & Leap 15+
+#
 # Prerequisites:
 #   - Root/sudo access
 #   - Network connectivity to O.A.S.I.S. Gateway
@@ -72,12 +80,113 @@ detect_os() {
         . /etc/os-release
         OS=$ID
         OS_VERSION=$VERSION_ID
+        OS_VERSION_ID=$VERSION_ID
+        OS_PRETTY_NAME="$PRETTY_NAME"
     else
         log_error "Cannot detect OS. /etc/os-release not found."
         exit 1
     fi
     
-    log_info "Detected OS: $OS $OS_VERSION"
+    log_info "Detected OS: $OS_PRETTY_NAME"
+    
+    # Normalize OS names for package management
+    case $OS in
+        rocky|almalinux)
+            OS_FAMILY="rhel"
+            ;;
+        centos)
+            OS_FAMILY="centos"
+            ;;
+        rhel)
+            OS_FAMILY="rhel"
+            ;;
+        fedora)
+            OS_FAMILY="fedora"
+            ;;
+        debian)
+            OS_FAMILY="debian"
+            ;;
+        ubuntu)
+            OS_FAMILY="ubuntu"
+            ;;
+        opensuse*|sles)
+            OS_FAMILY="suse"
+            ;;
+        *)
+            OS_FAMILY=$OS
+            ;;
+    esac
+    
+    log_info "OS Family: $OS_FAMILY"
+    
+    # Validate minimum version requirements
+    validate_os_version
+}
+
+validate_os_version() {
+    local version_ok=true
+    local min_version=""
+    
+    case $OS in
+        debian)
+            min_version="12"
+            if [ "${OS_VERSION_ID%%.*}" -lt 12 ]; then
+                version_ok=false
+            fi
+            ;;
+        ubuntu)
+            min_version="22.04"
+            if [[ "$(echo -e "${OS_VERSION}\n22.04" | sort -V | head -n1)" != "22.04" ]]; then
+                version_ok=false
+            fi
+            ;;
+        rhel|rocky|almalinux)
+            min_version="9.7"
+            # Accept version 9.7+ or 10.1+
+            local major="${OS_VERSION_ID%%.*}"
+            if [ "$major" -eq 9 ]; then
+                local minor="${OS_VERSION_ID#*.}"
+                if [ "${minor%%.*}" -lt 7 ]; then
+                    version_ok=false
+                fi
+            elif [ "$major" -lt 9 ]; then
+                version_ok=false
+            fi
+            ;;
+        fedora)
+            min_version="40"
+            if [ "$OS_VERSION_ID" -lt 40 ]; then
+                version_ok=false
+            fi
+            ;;
+        opensuse-leap)
+            min_version="15"
+            if [ "${OS_VERSION_ID%%.*}" -lt 15 ]; then
+                version_ok=false
+            fi
+            ;;
+        opensuse-tumbleweed)
+            # Rolling release, always supported
+            ;;
+        centos)
+            # Only CentOS Stream is supported
+            if [[ ! "$OS_PRETTY_NAME" =~ "Stream" ]]; then
+                log_error "Only CentOS Stream is supported. CentOS Linux has reached EOL."
+                log_info "Consider migrating to Rocky Linux or AlmaLinux"
+                exit 1
+            fi
+            ;;
+    esac
+    
+    if [ "$version_ok" = false ]; then
+        log_warning "This OS version ($OS_VERSION) may not be officially supported"
+        log_warning "Minimum recommended version: $min_version"
+        read -p "Continue anyway? (y/N): " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            log_info "Deployment cancelled"
+            exit 0
+        fi
+    fi
 }
 
 check_dependencies() {
@@ -93,13 +202,21 @@ check_dependencies() {
         log_error "Missing dependencies: ${missing_deps[*]}"
         log_info "Installing dependencies..."
         
-        case $OS in
+        case $OS_FAMILY in
             ubuntu|debian)
                 apt-get update
                 apt-get install -y curl wget systemd
                 ;;
-            centos|rhel|fedora)
-                yum install -y curl wget systemd
+            rhel|centos|fedora)
+                if command -v dnf &> /dev/null; then
+                    dnf install -y curl wget systemd
+                else
+                    yum install -y curl wget systemd
+                fi
+                ;;
+            suse)
+                zypper refresh
+                zypper install -y curl wget systemd
                 ;;
             *)
                 log_error "Unsupported OS for automatic dependency installation"
@@ -157,37 +274,107 @@ prompt_config() {
 install_fluent_bit() {
     log_info "Installing Fluent Bit $FLUENT_BIT_VERSION..."
     
-    case $OS in
-        ubuntu|debian)
+    case $OS_FAMILY in
+        ubuntu)
+            # Detect Ubuntu codename
+            local codename=$(lsb_release -cs 2>/dev/null || echo "jammy")
+            
             # Add Fluent Bit GPG key
             curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fluentbit-keyring.gpg
             
             # Add Fluent Bit repository
-            echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/$(lsb_release -cs) $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/fluent-bit.list
+            echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/$codename $codename main" | tee /etc/apt/sources.list.d/fluent-bit.list
             
             # Update and install
             apt-get update
             apt-get install -y fluent-bit
             ;;
             
-        centos|rhel|fedora)
+        debian)
+            # Detect Debian codename
+            local codename=$(lsb_release -cs 2>/dev/null || grep VERSION_CODENAME /etc/os-release | cut -d= -f2)
+            
+            # Add Fluent Bit GPG key
+            curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor -o /usr/share/keyrings/fluentbit-keyring.gpg
+            
+            # Add Fluent Bit repository
+            echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/debian/$codename $codename main" | tee /etc/apt/sources.list.d/fluent-bit.list
+            
+            # Update and install
+            apt-get update
+            apt-get install -y fluent-bit
+            ;;
+            
+        rhel|centos)
+            # Determine major version
+            local major_version="${OS_VERSION_ID%%.*}"
+            
             # Add Fluent Bit repository
             cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
 [fluent-bit]
 name=Fluent Bit
-baseurl=https://packages.fluentbit.io/centos/\$releasever/\$basearch/
+baseurl=https://packages.fluentbit.io/centos/${major_version}/\$basearch/
 gpgcheck=1
 gpgkey=https://packages.fluentbit.io/fluentbit.key
 enabled=1
 EOF
             
-            # Install
-            yum install -y fluent-bit
+            # Install using dnf or yum
+            if command -v dnf &> /dev/null; then
+                dnf install -y fluent-bit
+            else
+                yum install -y fluent-bit
+            fi
+            ;;
+            
+        fedora)
+            # Fedora uses dnf
+            # Add Fluent Bit repository (use Fedora-specific repo if available, otherwise CentOS)
+            cat > /etc/yum.repos.d/fluent-bit.repo <<EOF
+[fluent-bit]
+name=Fluent Bit
+baseurl=https://packages.fluentbit.io/centos/9/\$basearch/
+gpgcheck=1
+gpgkey=https://packages.fluentbit.io/fluentbit.key
+enabled=1
+EOF
+            
+            dnf install -y fluent-bit
+            ;;
+            
+        suse)
+            # openSUSE uses zypper
+            log_info "Adding Fluent Bit repository for openSUSE..."
+            
+            # Import GPG key
+            rpm --import https://packages.fluentbit.io/fluentbit.key
+            
+            # Determine version for repo URL
+            local repo_version
+            if [ "$OS" = "opensuse-tumbleweed" ]; then
+                repo_version="tumbleweed"
+            else
+                repo_version="leap/${OS_VERSION_ID}"
+            fi
+            
+            # Add repository
+            zypper addrepo -f "https://packages.fluentbit.io/opensuse/${repo_version}/" fluent-bit
+            
+            # Refresh and install
+            zypper refresh
+            zypper install -y fluent-bit
             ;;
             
         *)
-            log_error "Unsupported OS: $OS"
+            log_error "Unsupported OS: $OS ($OS_FAMILY)"
             log_info "Please install Fluent Bit manually from: https://docs.fluentbit.io/manual/installation/linux"
+            log_info "Supported distributions:"
+            log_info "  - Debian 12+"
+            log_info "  - Ubuntu 22.04+"
+            log_info "  - RHEL/Rocky/Alma 9.7+, 10.1+"
+            log_info "  - CentOS Stream"
+            log_info "  - Fedora 40+"
+            log_info "  - openSUSE Tumbleweed & Leap 15+"
             exit 1
             ;;
     esac
