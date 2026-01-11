@@ -129,9 +129,8 @@ load_tenant_config() {
     # Set default port if not specified
     OASIS_GATEWAY_PORT="${OASIS_GATEWAY_PORT:-8444}"
     
-    # Extract CA certificate from config file
-    OASIS_CA_CERT=$(sed -n '/#--- BEGIN OASIS CA CERTIFICATE ---/,/#--- END OASIS CA CERTIFICATE ---/p' "$TENANT_CONFIG" | \
-                    grep -v "^#" | grep -v "^$")
+    # Extract CA certificate from config file (preserve exact PEM format)
+    OASIS_CA_CERT=$(sed -n '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/p' "$TENANT_CONFIG")
     
     if [ -z "$OASIS_CA_CERT" ]; then
         log_error "CA certificate not found in $TENANT_CONFIG"
@@ -464,6 +463,15 @@ create_config() {
     # Write embedded CA certificate to disk
     echo "$OASIS_CA_CERT" > "$CONFIG_DIR/oasis-ca.pem"
     chmod 644 "$CONFIG_DIR/oasis-ca.pem"
+    
+    # Validate certificate format
+    if ! openssl x509 -in "$CONFIG_DIR/oasis-ca.pem" -noout 2>/dev/null; then
+        log_error "Invalid CA certificate format"
+        log_error "Certificate validation failed. Please check the certificate in $TENANT_CONFIG"
+        cat "$CONFIG_DIR/oasis-ca.pem"
+        exit 1
+    fi
+    
     log_success "CA certificate written to $CONFIG_DIR/oasis-ca.pem"
     
     # Create main configuration
@@ -623,6 +631,28 @@ EOF
     log_success "Systemd service created"
 }
 
+validate_fluent_bit_config() {
+    log_info "Validating Fluent Bit configuration..."
+    
+    # Check if fluent-bit binary exists
+    local fb_bin="/opt/fluent-bit/bin/fluent-bit"
+    if [ ! -f "$fb_bin" ]; then
+        log_warning "Fluent Bit binary not found at $fb_bin, skipping validation"
+        return 0
+    fi
+    
+    # Test configuration with dry-run
+    if "$fb_bin" -c "$CONFIG_DIR/fluent-bit.conf" --dry-run 2>&1 | tee /tmp/fluent-bit-validation.log; then
+        log_success "Fluent Bit configuration is valid"
+        return 0
+    else
+        log_error "Fluent Bit configuration validation failed"
+        log_error "Validation output:"
+        cat /tmp/fluent-bit-validation.log
+        exit 1
+    fi
+}
+
 start_service() {
     log_info "Starting Fluent Bit service..."
     
@@ -641,7 +671,19 @@ start_service() {
         systemctl status "$SERVICE_NAME" --no-pager
     else
         log_error "Failed to start Fluent Bit service"
-        log_info "Check logs with: journalctl -u $SERVICE_NAME -f"
+        echo
+        log_error "=== Service Status ==="
+        systemctl status "$SERVICE_NAME" --no-pager || true
+        echo
+        log_error "=== Recent Logs ==="
+        journalctl -u "$SERVICE_NAME" -n 50 --no-pager || true
+        echo
+        log_error "=== Manual Troubleshooting ==="
+        log_info "Try running Fluent Bit manually to see the error:"
+        log_info "  sudo /opt/fluent-bit/bin/fluent-bit -c $CONFIG_DIR/fluent-bit.conf -v"
+        echo
+        log_info "Check certificate validity:"
+        log_info "  sudo openssl x509 -in $CONFIG_DIR/oasis-ca.pem -text -noout"
         exit 1
     fi
 }
@@ -687,6 +729,7 @@ main() {
     install_fluent_bit
     register_agent
     create_config
+    validate_fluent_bit_config
     create_systemd_service
     start_service
     
