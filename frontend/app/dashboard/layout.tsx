@@ -28,8 +28,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const settingsNavigation = 
     user?.role === 'platform_admin'
       ? [
-          { name: 'User Management', href: '/users', icon: '👥' },
-          { name: 'System Settings', href: '/system-settings', icon: '⚙️' },
+          { name: 'User Management', href: '/admin/users', icon: '👥' },
+          { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
         ]
       : [];
 

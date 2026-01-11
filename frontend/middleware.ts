@@ -118,15 +118,13 @@ export function middleware(request: NextRequest) {
   }
   
   // S.O.C.A.P. (SOC Analyst Portal) - soc_analyst + platform_admin
-  // Currently: /dashboard, /users, /system-settings
-  // After refactor: /(socap)/*
-  if (pathname.startsWith('/dashboard') || 
-      pathname.startsWith('/users') || 
-      pathname.startsWith('/system-settings')) {
+  // /dashboard, /settings (personal settings)
+  // Note: /admin/* routes handled separately above
+  if (pathname.startsWith('/dashboard') || pathname.startsWith('/settings')) {
     // SOC analysts and platform admins can access
     if (userRole !== 'soc_analyst' && userRole !== 'platform_admin') {
       // Customer users should not access SOC portal
-      // For now, redirect to dashboard (will be customer portal in Phase 2D)
+      // For now, redirect to login (will be customer portal in Phase 2D)
       const loginUrl = new URL('/login', request.url);
       loginUrl.searchParams.set('error', 'wrong_portal');
       return NextResponse.redirect(loginUrl);
