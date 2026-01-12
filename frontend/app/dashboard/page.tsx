@@ -168,7 +168,8 @@ export default function DashboardPage() {
               label: 'Active Alerts', 
               value: '0', 
               icon: '🔔', 
-              color: 'red' 
+              color: 'red',
+              comingSoon: true
             },
             { 
               label: 'Sources', 
@@ -188,9 +189,24 @@ export default function DashboardPage() {
               className={cardClass}
               style={{ 
                 background: 'var(--card-bg)',
-                border: theme === 'cyber' ? '2px solid var(--card-border)' : undefined
+                border: theme === 'cyber' ? '2px solid var(--card-border)' : undefined,
+                position: 'relative',
+                opacity: stat.comingSoon ? 0.6 : 1,
               }}
+              title={stat.comingSoon ? 'Coming in Phase 3 (AI/LLM Integration)' : ''}
             >
+              {stat.comingSoon && (
+                <div
+                  className="absolute top-2 right-2 px-2 py-1 rounded text-xs font-semibold"
+                  style={{
+                    background: 'rgba(168, 85, 247, 0.2)',
+                    color: '#a855f7',
+                    border: '1px solid #a855f7',
+                  }}
+                >
+                  Phase 3
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <div>
                   <p 
@@ -235,48 +251,90 @@ export default function DashboardPage() {
           </h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
-              { icon: '🔍', title: 'Search Logs', desc: 'Query your log data' },
-              { icon: '📊', title: 'Create Dashboard', desc: 'Build custom views' },
-              { icon: '🔔', title: 'Configure Alerts', desc: 'Set up notifications' },
+              { icon: '🔍', title: 'Search Logs', desc: 'Query your log data', link: '/dashboard/logs' },
+              { icon: '📊', title: 'Create Dashboard', desc: 'Build custom views', comingSoon: true },
+              { icon: '🔔', title: 'Configure Alerts', desc: 'Set up notifications', comingSoon: true },
             ].map((action) => (
-              <button 
-                key={action.title}
-                className="p-4 rounded-lg text-left transition-colors"
-                style={{
-                  background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
-                  border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.3)' : '1px solid #475569'
-                }}
-                onMouseEnter={(e) => {
-                  if (theme === 'cyber') {
-                    e.currentTarget.style.borderColor = 'var(--cyber-cyan)';
-                    e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 212, 255, 0.3)';
-                  } else {
-                    e.currentTarget.style.background = '#475569';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (theme === 'cyber') {
-                    e.currentTarget.style.borderColor = 'rgba(0, 255, 159, 0.3)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  } else {
-                    e.currentTarget.style.background = '#334155';
-                  }
-                }}
-              >
-                <div className="text-2xl mb-2">{action.icon}</div>
-                <div 
-                  className="font-medium"
-                  style={{ color: 'var(--text-primary)' }}
+              action.link ? (
+                <a
+                  key={action.title}
+                  href={action.link}
+                  className="p-4 rounded-lg text-left transition-colors block"
+                  style={{
+                    background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
+                    border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.3)' : '1px solid #475569',
+                    textDecoration: 'none',
+                  }}
+                  onMouseEnter={(e) => {
+                    if (theme === 'cyber') {
+                      e.currentTarget.style.borderColor = 'var(--cyber-cyan)';
+                      e.currentTarget.style.boxShadow = '0 0 15px rgba(0, 212, 255, 0.3)';
+                    } else {
+                      e.currentTarget.style.background = '#475569';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (theme === 'cyber') {
+                      e.currentTarget.style.borderColor = 'rgba(0, 255, 159, 0.3)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    } else {
+                      e.currentTarget.style.background = '#334155';
+                    }
+                  }}
                 >
-                  {action.title}
-                </div>
+                  <div className="text-2xl mb-2">{action.icon}</div>
+                  <div 
+                    className="font-medium"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {action.title}
+                  </div>
+                  <div 
+                    className="text-sm mt-1"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {action.desc}
+                  </div>
+                </a>
+              ) : (
                 <div 
-                  className="text-sm mt-1"
-                  style={{ color: 'var(--text-secondary)' }}
+                  key={action.title}
+                  className="p-4 rounded-lg text-left transition-colors relative"
+                  style={{
+                    background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.05)' : '#334155',
+                    border: theme === 'cyber' ? '1px solid rgba(0, 255, 159, 0.3)' : '1px solid #475569',
+                    opacity: action.comingSoon ? 0.5 : 1,
+                    cursor: action.comingSoon ? 'not-allowed' : 'pointer',
+                  }}
+                  title={action.comingSoon ? 'Coming in Phase 2C / Phase 3' : ''}
                 >
-                  {action.desc}
+                  {action.comingSoon && (
+                    <div
+                      className="absolute top-2 right-2 px-2 py-1 rounded text-xs font-semibold"
+                      style={{
+                        background: 'rgba(168, 85, 247, 0.2)',
+                        color: '#a855f7',
+                        border: '1px solid #a855f7',
+                      }}
+                    >
+                      Coming Soon
+                    </div>
+                  )}
+                  <div className="text-2xl mb-2">{action.icon}</div>
+                  <div 
+                    className="font-medium"
+                    style={{ color: 'var(--text-primary)' }}
+                  >
+                    {action.title}
+                  </div>
+                  <div 
+                    className="text-sm mt-1"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    {action.desc}
+                  </div>
                 </div>
-              </button>
+              )
             ))}
           </div>
         </div>
