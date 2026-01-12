@@ -183,7 +183,7 @@ function Install-FluentBit {
             if ($existingService) {
                 Write-Info "Stopping service: $svcName..."
                 Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
-                & sc.exe delete $svcName | Out-Null
+                Remove-Service -Name $svcName -Force -ErrorAction SilentlyContinue
             }
         }
         
@@ -612,44 +612,39 @@ function New-WindowsService {
         if ($existingService) {
             Write-Info "Stopping and removing existing service: $svcName..."
             Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
-            & sc.exe delete $svcName | Out-Null
+            Remove-Service -Name $svcName -Force -ErrorAction SilentlyContinue
             Start-Sleep -Seconds 2
         }
     }
     
     try {
-        # Create new service with our configuration
-        # Use sc.exe to create the service (matches official Fluent Bit documentation)
-        # Format: binPath= "path\to\fluent-bit.exe" -c "path\to\config.conf"
-        # Note: key is case-insensitive, but docs use binPath= (with capital P).
+        # Build the service command line with proper quoting
         $binaryPathName = "`"$binPath`" -c `"$configPath`""
-        
+
         Write-Info "Creating service '$SERVICE_NAME' with display name '$SERVICE_DISPLAY_NAME'..."
         Write-Info "Service command line: $binaryPathName"
-        
-        # Create service with sc.exe - note the syntax: binpath= (with equals and space after)
-        # sc.exe parsing is finicky; build a single command string so quoting survives
-        $scCreateArgs = "create `"$SERVICE_NAME`" binPath= `"$binaryPathName`" start= auto DisplayName= `"$SERVICE_DISPLAY_NAME`""
-        Write-Info "sc.exe args: $scCreateArgs"
-        $scResult = & sc.exe $scCreateArgs 2>&1
-        
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error "sc.exe failed with exit code $LASTEXITCODE"
-            Write-Error "Output: $scResult"
-            exit 1
-        }
-        
+
+        # Create service using PowerShell's New-Service cmdlet (native, no sc.exe)
+        New-Service `
+            -Name $SERVICE_NAME `
+            -BinaryPathName $binaryPathName `
+            -DisplayName $SERVICE_DISPLAY_NAME `
+            -Description "Fluent Bit log forwarder for O.A.S.I.S. SIEM platform" `
+            -StartupType Automatic `
+            -ErrorAction Stop | Out-Null
+
         Write-Success "Windows service created: $SERVICE_NAME"
-        
-        # Set description separately as sc.exe create doesn't have a description parameter
-        sc.exe description $SERVICE_NAME "Fluent Bit log forwarder for O.A.S.I.S. SIEM platform" | Out-Null
-        
-        # Configure service recovery options using sc.exe
-        sc.exe failure $SERVICE_NAME reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
-        
-        # Verify the service was created correctly
+
+        # Configure service recovery options using CIM (modern PowerShell)
+        # Format: [restart|reboot|run program]/delay
+        $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$SERVICE_NAME'"
+        $service.Change($null, $null, $null, $null, $null, $null, $null,
+            "restart/60000/restart/60000/restart/60000",
+            $null, $null) | Out-Null
+
+        # Verify the service was created correctly using CIM (modern PowerShell)
         Write-Info "Verifying service configuration..."
-        $service = Get-WmiObject -Class Win32_Service -Filter "Name='$SERVICE_NAME'"
+        $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$SERVICE_NAME'"
         if ($service) {
             Write-Info "  Service PathName: $($service.PathName)"
             Write-Info "  Service State: $($service.State)"
