@@ -5,6 +5,7 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { tokenUtils } from '@/lib/auth';
+import { TenantSubscription } from '@/types/agent';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -17,6 +18,35 @@ export default function DashboardPage() {
     ingestionRate: 0,
   });
   const [metricsLoading, setMetricsLoading] = useState(true);
+
+  // Subscription state (for "My Tenants" toggle)
+  const [showSubscribedOnly, setShowSubscribedOnly] = useState(false);
+  const [subscriptions, setSubscriptions] = useState<TenantSubscription[]>([]);
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
+
+  // Fetch subscriptions
+  const fetchSubscriptions = async () => {
+    try {
+      const token = tokenUtils.getToken();
+      if (!token) return;
+
+      setSubscriptionsLoading(true);
+      const response = await fetch('/api/subscriptions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      setSubscriptions(data.subscriptions || []);
+    } catch (err) {
+      console.error('Failed to load subscriptions:', err);
+    } finally {
+      setSubscriptionsLoading(false);
+    }
+  };
 
   // Fetch system metrics
   const fetchMetrics = async () => {
@@ -46,6 +76,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (user) {
       fetchMetrics();
+      fetchSubscriptions();
       const interval = setInterval(fetchMetrics, 30000);
       return () => clearInterval(interval);
     }
@@ -82,6 +113,46 @@ export default function DashboardPage() {
           <p style={{ color: 'var(--text-secondary)' }}>
             Open-Source AI SIEM Intelligence System
           </p>
+        </div>
+
+        {/* Tenant Scope Toggle */}
+        <div className="mb-6">
+          <div className="flex items-center gap-4">
+            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              Showing:
+            </span>
+            <button
+              onClick={() => setShowSubscribedOnly(false)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                !showSubscribedOnly ? 'opacity-100' : 'opacity-50'
+              }`}
+              style={{
+                background: !showSubscribedOnly ? 'var(--primary)' : 'var(--button-bg)',
+                color: !showSubscribedOnly ? 'var(--button-text)' : 'var(--text-primary)',
+                border: '1px solid var(--button-border)',
+              }}
+            >
+              All Tenants
+            </button>
+            <button
+              onClick={() => setShowSubscribedOnly(true)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                showSubscribedOnly ? 'opacity-100' : 'opacity-50'
+              }`}
+              style={{
+                background: showSubscribedOnly ? 'var(--primary)' : 'var(--button-bg)',
+                color: showSubscribedOnly ? 'var(--button-text)' : 'var(--text-primary)',
+                border: '1px solid var(--button-border)',
+              }}
+            >
+              My Subscribed Tenants ({subscriptions.length})
+            </button>
+            {showSubscribedOnly && subscriptions.length === 0 && !subscriptionsLoading && (
+              <span className="text-sm px-4 py-2" style={{ color: 'var(--text-secondary)' }}>
+                No subscriptions - Subscribe to tenants to filter data
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Stats Grid */}
