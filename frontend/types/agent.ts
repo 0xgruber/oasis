@@ -28,3 +28,17 @@ export interface AgentStatusBreakdown {
   unknown: number;
   total: number;
 }
+
+export interface TenantSubscription {
+  id: string;
+  analyst_id: string;
+  tenant_id: string;
+  tenant_name: string;
+  notification_level: 'all' | 'critical_only' | 'none';
+  subscribed_at: string;
+}
+
+export interface SubscriptionListResponse {
+  subscriptions: TenantSubscription[];
+  total: number;
+}

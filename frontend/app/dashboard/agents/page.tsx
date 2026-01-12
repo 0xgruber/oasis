@@ -5,24 +5,29 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { tokenUtils } from '@/lib/auth';
 import AgentsModal from '@/components/AgentsModal';
-import { Agent, AgentListResponse, AgentStatusBreakdown } from '@/types/agent';
+import { Agent, AgentListResponse, AgentStatusBreakdown, TenantSubscription } from '@/types/agent';
 
 export default function AgentsPage() {
   const { user } = useAuth();
   const { theme } = useTheme();
-  
+
   const [loading, setLoading] = useState(true);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  
+
   // Status breakdown
   const [breakdown, setBreakdown] = useState<AgentStatusBreakdown | null>(null);
-  
+
   // Filters
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  
+
+  // Tenant filter (All Tenants vs My Subscribed Tenants)
+  const [showSubscribedOnly, setShowSubscribedOnly] = useState(false);
+  const [subscriptions, setSubscriptions] = useState<TenantSubscription[]>([]);
+  const [subscriptionsLoading, setSubscriptionsLoading] = useState(false);
+
   // Pagination
   const [limit] = useState(50);
   const [offset, setOffset] = useState(0);
@@ -32,6 +37,29 @@ export default function AgentsPage() {
   // Agent detail modal
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
+
+  const fetchSubscriptions = async () => {
+    try {
+      const token = tokenUtils.getToken();
+      if (!token) return;
+
+      setSubscriptionsLoading(true);
+      const response = await fetch('/api/subscriptions', {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) return;
+
+      const data = await response.json();
+      setSubscriptions(data.subscriptions || []);
+    } catch (err) {
+      console.error('Failed to load subscriptions:', err);
+    } finally {
+      setSubscriptionsLoading(false);
+    }
+  };
 
   const fetchBreakdown = async () => {
     try {
@@ -88,6 +116,7 @@ export default function AgentsPage() {
   useEffect(() => {
     fetchAgents();
     fetchBreakdown();
+    fetchSubscriptions();
   }, [statusFilter, offset]);
 
   useEffect(() => {
@@ -165,6 +194,13 @@ export default function AgentsPage() {
   };
 
   const filteredAgents = agents.filter(agent => {
+    if (showSubscribedOnly) {
+      const subscribedTenantIds = subscriptions.map(s => s.tenant_id);
+      if (!subscribedTenantIds.includes(agent.tenant_id)) {
+        return false;
+      }
+    }
+
     if (!searchTerm) return true;
     return agent.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
            agent.agent_id.toLowerCase().includes(searchTerm.toLowerCase());
@@ -182,7 +218,7 @@ export default function AgentsPage() {
     <div>
       {/* Header */}
       <div className="mb-8">
-        <h1 
+        <h1
           className={`text-3xl font-bold mb-2 ${theme === 'cyber' ? 'glitch-text' : ''}`}
           style={{ color: 'var(--text-primary)' }}
         >
@@ -191,6 +227,46 @@ export default function AgentsPage() {
         <p style={{ color: 'var(--text-secondary)' }}>
           Monitor and manage all deployed agents across tenants
         </p>
+      </div>
+
+      {/* Tenant Scope Toggle */}
+      <div className="mb-6">
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+            Showing:
+          </span>
+          <button
+            onClick={() => setShowSubscribedOnly(false)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              !showSubscribedOnly ? 'opacity-100' : 'opacity-50'
+            }`}
+            style={{
+              background: !showSubscribedOnly ? 'var(--primary)' : 'var(--button-bg)',
+              color: !showSubscribedOnly ? 'var(--button-text)' : 'var(--text-primary)',
+              border: '1px solid var(--button-border)',
+            }}
+          >
+            All Tenants
+          </button>
+          <button
+            onClick={() => setShowSubscribedOnly(true)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showSubscribedOnly ? 'opacity-100' : 'opacity-50'
+            }`}
+            style={{
+              background: showSubscribedOnly ? 'var(--primary)' : 'var(--button-bg)',
+              color: showSubscribedOnly ? 'var(--button-text)' : 'var(--text-primary)',
+              border: '1px solid var(--button-border)',
+            }}
+          >
+            My Subscribed Tenants ({subscriptions.length})
+          </button>
+          {showSubscribedOnly && subscriptions.length === 0 && !subscriptionsLoading && (
+            <span className="text-sm px-4 py-2" style={{ color: 'var(--text-secondary)' }}>
+              No subscriptions - Subscribe to tenants to filter agents
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Status Cards */}
