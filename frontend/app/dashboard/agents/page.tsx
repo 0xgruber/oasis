@@ -220,60 +220,131 @@ export default function AgentsPage() {
           </div>
           
           <div 
-            className="p-4 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+            className={`p-4 rounded-lg cursor-pointer transition-all hover:opacity-80 ${statusFilter === 'online' ? 'ring-2' : ''}`}
             style={{
               background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.1)' : 'rgba(16, 185, 129, 0.1)',
               border: `1px solid ${theme === 'cyber' ? '#00ff9f' : '#10b981'}`,
+              ringColor: statusFilter === 'online' ? (theme === 'cyber' ? '#00ff9f' : '#10b981') : 'transparent',
+              outlineColor: statusFilter === 'online' ? (theme === 'cyber' ? '#00ff9f' : '#10b981') : 'transparent',
+              boxShadow: statusFilter === 'online' ? (theme === 'cyber' ? '0 0 15px rgba(0, 255, 159, 0.3)' : '0 0 10px rgba(16, 185, 129, 0.2)') : undefined,
             }}
             onClick={() => setStatusFilter(statusFilter === 'online' ? '' : 'online')}
           >
-            <div className="text-sm" style={{ color: theme === 'cyber' ? '#00ff9f' : '#10b981' }}>Online</div>
+            <div className="text-xs flex justify-between items-center" style={{ color: theme === 'cyber' ? '#00ff9f' : '#10b981' }}>
+              <span>Online</span>
+              {breakdown.total > 0 && (
+                <span className="opacity-60">
+                  {Math.round((breakdown.online / breakdown.total) * 100)}%
+                </span>
+              )}
+            </div>
             <div className="text-2xl font-bold mt-1" style={{ color: theme === 'cyber' ? '#00ff9f' : '#10b981' }}>
               {breakdown.online}
             </div>
           </div>
           
           <div 
-            className="p-4 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+            className={`p-4 rounded-lg cursor-pointer transition-all hover:opacity-80 ${statusFilter === 'offline' ? 'ring-2' : ''}`}
             style={{
               background: theme === 'cyber' ? 'rgba(251, 191, 36, 0.1)' : 'rgba(251, 191, 36, 0.1)',
               border: `1px solid ${theme === 'cyber' ? '#fbbf24' : '#f59e0b'}`,
+              outlineColor: statusFilter === 'offline' ? (theme === 'cyber' ? '#fbbf24' : '#f59e0b') : 'transparent',
+              boxShadow: statusFilter === 'offline' ? (theme === 'cyber' ? '0 0 15px rgba(251, 191, 36, 0.3)' : '0 0 10px rgba(251, 191, 36, 0.2)') : undefined,
             }}
             onClick={() => setStatusFilter(statusFilter === 'offline' ? '' : 'offline')}
           >
-            <div className="text-sm" style={{ color: theme === 'cyber' ? '#fbbf24' : '#f59e0b' }}>Offline</div>
+            <div className="text-xs flex justify-between items-center" style={{ color: theme === 'cyber' ? '#fbbf24' : '#f59e0b' }}>
+              <span>Offline</span>
+              {breakdown.total > 0 && (
+                <span className="opacity-60">
+                  {Math.round((breakdown.offline / breakdown.total) * 100)}%
+                </span>
+              )}
+            </div>
             <div className="text-2xl font-bold mt-1" style={{ color: theme === 'cyber' ? '#fbbf24' : '#f59e0b' }}>
               {breakdown.offline}
             </div>
           </div>
           
           <div 
-            className="p-4 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+            className={`p-4 rounded-lg cursor-pointer transition-all hover:opacity-80 ${statusFilter === 'dead' ? 'ring-2' : ''}`}
             style={{
               background: 'rgba(239, 68, 68, 0.1)',
               border: '1px solid #ef4444',
+              outlineColor: statusFilter === 'dead' ? '#ef4444' : 'transparent',
+              boxShadow: statusFilter === 'dead' ? '0 0 15px rgba(239, 68, 68, 0.3)' : undefined,
             }}
             onClick={() => setStatusFilter(statusFilter === 'dead' ? '' : 'dead')}
           >
-            <div className="text-sm" style={{ color: '#ef4444' }}>Dead</div>
+            <div className="text-xs flex justify-between items-center" style={{ color: '#ef4444' }}>
+              <span>Dead</span>
+              {breakdown.total > 0 && (
+                <span className="opacity-60">
+                  {Math.round((breakdown.dead / breakdown.total) * 100)}%
+                </span>
+              )}
+            </div>
             <div className="text-2xl font-bold mt-1" style={{ color: '#ef4444' }}>
               {breakdown.dead}
             </div>
           </div>
           
           <div 
-            className="p-4 rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
+            className={`p-4 rounded-lg cursor-pointer transition-all hover:opacity-80 ${statusFilter === 'unknown' ? 'ring-2' : ''}`}
             style={{
               background: 'rgba(148, 163, 184, 0.1)',
               border: '1px solid #94a3b8',
+              outlineColor: statusFilter === 'unknown' ? '#94a3b8' : 'transparent',
+              boxShadow: statusFilter === 'unknown' ? '0 0 15px rgba(148, 163, 184, 0.3)' : undefined,
             }}
             onClick={() => setStatusFilter(statusFilter === 'unknown' ? '' : 'unknown')}
           >
-            <div className="text-sm" style={{ color: '#94a3b8' }}>Unknown</div>
+            <div className="text-xs flex justify-between items-center" style={{ color: '#94a3b8' }}>
+              <span>Unknown</span>
+              {breakdown.total > 0 && (
+                <span className="opacity-60">
+                  {Math.round((breakdown.unknown / breakdown.total) * 100)}%
+                </span>
+              )}
+            </div>
             <div className="text-2xl font-bold mt-1" style={{ color: '#94a3b8' }}>
               {breakdown.unknown}
             </div>
           </div>
+        </div>
+        {statusFilter && (
+          <div className="mb-4 flex items-center gap-2 text-sm">
+            <span style={{ color: 'var(--text-secondary)' }}>Filtering by:</span>
+            <span 
+              className="px-3 py-1 rounded text-xs font-semibold uppercase"
+              style={{
+                background: theme === 'cyber' ? 'rgba(138, 43, 226, 0.2)' : 'rgba(139, 92, 246, 0.2)',
+                color: theme === 'cyber' ? '#a855f7' : '#a78bfa',
+                border: `1px solid ${theme === 'cyber' ? '#a855f7' : '#a78bfa'}`,
+              }}
+            >
+              {statusFilter}
+            </span>
+            <button
+              onClick={() => setStatusFilter('')}
+              className="text-xs hover:opacity-80 transition-opacity"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              (click status card to clear)
+            </button>
+          </div>
+        )}
+      )}
+      {!breakdown && !loading && (
+        <div 
+          className="mb-6 p-4 rounded-lg"
+          style={{
+            background: theme === 'cyber' ? 'rgba(148, 163, 184, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(148, 163, 184, 0.3)',
+            color: 'var(--text-secondary)',
+          }}
+        >
+          Failed to load agent status breakdown. Refresh the page to retry.
         </div>
       )}
 

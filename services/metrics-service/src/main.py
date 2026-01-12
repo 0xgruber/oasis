@@ -275,6 +275,42 @@ async def list_agents(
         )
 
 
+@app.get("/metrics/agents/status")
+async def agent_status_breakdown(tenant_id: Optional[str] = None):
+    """
+    Get agent status breakdown counts
+
+    Query Parameters:
+        tenant_id: Optional tenant UUID filter
+
+    Returns:
+        Dictionary with counts by status:
+        - online: Number of online agents
+        - offline: Number of offline agents
+        - dead: Number of dead agents
+        - unknown: Number of agents with unknown status
+        - total: Total number of agents
+
+    Example:
+        {
+            "online": 5,
+            "offline": 2,
+            "dead": 1,
+            "unknown": 0,
+            "total": 8
+        }
+    """
+    try:
+        breakdown = await get_agent_status_breakdown(tenant_id)
+        return breakdown
+    except Exception as e:
+        logger.error("agent_status_breakdown_endpoint_failed", tenant_id=tenant_id, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch agent status breakdown: {str(e)}",
+        )
+
+
 @app.get("/metrics/agents/{agent_id}")
 async def get_agent(agent_id: str):
     """
@@ -316,40 +352,4 @@ async def get_agent(agent_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch agent: {str(e)}",
-        )
-
-
-@app.get("/metrics/agents/status")
-async def agent_status_breakdown(tenant_id: Optional[str] = None):
-    """
-    Get agent status breakdown counts
-
-    Query Parameters:
-        tenant_id: Optional tenant UUID filter
-
-    Returns:
-        Dictionary with counts by status:
-        - online: Number of online agents
-        - offline: Number of offline agents
-        - dead: Number of dead agents
-        - unknown: Number of agents with unknown status
-        - total: Total number of agents
-
-    Example:
-        {
-            "online": 5,
-            "offline": 2,
-            "dead": 1,
-            "unknown": 0,
-            "total": 8
-        }
-    """
-    try:
-        breakdown = await get_agent_status_breakdown(tenant_id)
-        return breakdown
-    except Exception as e:
-        logger.error("agent_status_breakdown_endpoint_failed", tenant_id=tenant_id, error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to fetch agent status breakdown: {str(e)}",
         )
