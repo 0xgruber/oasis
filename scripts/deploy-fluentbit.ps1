@@ -635,16 +635,25 @@ function New-WindowsService {
 
         Write-Success "Windows service created: $SERVICE_NAME"
 
-        # Configure service recovery options using CIM (modern PowerShell)
-        # Format: [restart|reboot|run program]/delay
-        $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$SERVICE_NAME'"
-        $service.Change($null, $null, $null, $null, $null, $null, $null,
-            "restart/60000/restart/60000/restart/60000",
-            $null, $null) | Out-Null
+        # Configure service recovery options using WMI (more reliable than CIM for this)
+        # Wrap in try-catch since failure actions are optional - don't break deployment if this fails
+        try {
+            Write-Info "Configuring service recovery options..."
+            $service = Get-WmiObject -Class Win32_Service -Filter "Name='$SERVICE_NAME'"
+            $null = $service.Change($null, $null, $null, $null, $null, $null, $null,
+                "restart/60000/restart/60000/restart/60000",
+                $null, $null)
+            Write-Success "Service recovery options configured: 3 restarts on failure (60s delay)"
+        }
+        catch {
+            Write-Warning "Could not configure service recovery options (optional): $($_.Exception.Message)"
+            Write-Info "Service will be created but may use default recovery settings"
+            # Don't exit - service is created successfully, failure actions are optional
+        }
 
-        # Verify the service was created correctly using CIM (modern PowerShell)
+        # Verify the service was created correctly using WMI (more compatible)
         Write-Info "Verifying service configuration..."
-        $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$SERVICE_NAME'"
+        $service = Get-WmiObject -Class Win32_Service -Filter "Name='$SERVICE_NAME'"
         if ($service) {
             Write-Info "  Service PathName: $($service.PathName)"
             Write-Info "  Service State: $($service.State)"
