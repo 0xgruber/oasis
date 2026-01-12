@@ -320,6 +320,269 @@ class AgentTimelineResponse(BaseModel):
     total: int
 
 
+# ============================================================================
+# Phase 2D-Part1: Tenant & API Key Management Models
+# ============================================================================
+
+
+class ApiKeyResponse(BaseModel):
+    id: str
+    key_prefix: str
+    description: Optional[str] = None
+    tenant_id: str
+    is_active: bool
+    created_at: str
+    last_used_at: Optional[str] = None
+    expires_at: Optional[str] = None
+
+
+class TenantStats(BaseModel):
+    agent_count: int
+    log_count_24h: int
+    log_count_total: int
+    disk_usage_mb: float
+    avg_eps: float
+
+
+class TenantResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    retention_days: int
+    eps_limit: int
+    is_active: bool
+    created_at: str
+    updated_at: str
+    api_key_prefix: Optional[str] = None
+    agent_count: Optional[int] = None
+    log_count: Optional[int] = None
+
+
+class TenantDetailResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    retention_days: int
+    eps_limit: int
+    is_active: bool
+    created_at: str
+    updated_at: str
+    stats: TenantStats
+    api_keys: List[ApiKeyResponse]
+
+
+class TenantListResponse(BaseModel):
+    tenants: List[TenantResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class CreateTenantRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    retention_days: Optional[int] = None
+    eps_limit: Optional[int] = None
+
+
+class CreateTenantResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    retention_days: int
+    eps_limit: int
+    is_active: bool
+    created_at: str
+    api_key: str  # Full key, shown only once
+    api_key_prefix: str
+
+
+class UpdateTenantRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    retention_days: Optional[int] = None
+    eps_limit: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class CreateApiKeyRequest(BaseModel):
+    description: Optional[str] = None
+
+
+class CreateApiKeyResponse(BaseModel):
+    id: str
+    api_key: str  # Full key, shown only once
+    key_prefix: str
+    description: Optional[str] = None
+    tenant_id: str
+    is_active: bool
+    created_at: str
+    expires_at: Optional[str] = None
+
+
+# ============================================================================
+# Helper Functions for Tenant Management
+# ============================================================================
+
+
+def generate_api_key() -> tuple[str, str]:
+    """
+    Generate a new API key in format: oasis_pk_<32_random_chars>
+
+    Returns:
+        tuple: (full_key, key_prefix) where key_prefix is first 16 chars
+    """
+    import secrets
+    import string
+
+    # Generate 32 random characters (alphanumeric)
+    alphabet = string.ascii_letters + string.digits
+    random_part = "".join(secrets.choice(alphabet) for _ in range(32))
+
+    full_key = f"oasis_pk_{random_part}"
+    key_prefix = full_key[:16]  # "oasis_pk_abc1234"
+
+    return full_key, key_prefix
+
+
+async def create_clickhouse_table_for_tenant(tenant_id: str) -> bool:
+    """
+    Create a ClickHouse table for a new tenant
+
+    Args:
+        tenant_id: UUID of the tenant
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not ch_client:
+        logger.error("clickhouse_client_not_initialized")
+        return False
+
+    # Convert UUID to ClickHouse-friendly format (replace hyphens with underscores)
+    table_name = f"logs_{tenant_id.replace('-', '_')}"
+
+    # Create table with same schema as existing tenant tables
+    create_table_sql = f"""
+    CREATE TABLE IF NOT EXISTS oasis.{table_name} (
+        uuid UUID DEFAULT generateUUIDv4(),
+        timestamp DateTime64(3),
+        tenant_id UUID,
+        raw_log String,
+        message String,
+        ocsf Object('json'),
+        source_ip IPv4 DEFAULT toIPv4('0.0.0.0'),
+        destination_ip IPv4 DEFAULT toIPv4('0.0.0.0'),
+        severity_id UInt8,
+        category_uid UInt16,
+        class_uid UInt16,
+        activity_id UInt8 DEFAULT 0,
+        status_id UInt8 DEFAULT 0,
+        ingested_at DateTime64(3) DEFAULT now64(3)
+    )
+    ENGINE = MergeTree()
+    ORDER BY (tenant_id, timestamp)
+    PARTITION BY toYYYYMM(timestamp)
+    TTL timestamp + INTERVAL 90 DAY;
+    """
+
+    try:
+        ch_client.command(create_table_sql)
+        logger.info("clickhouse_table_created", table_name=table_name, tenant_id=tenant_id)
+        return True
+    except Exception as e:
+        logger.error("clickhouse_table_creation_failed", error=str(e), tenant_id=tenant_id)
+        return False
+
+
+async def alter_clickhouse_table_ttl(tenant_id: str, retention_days: int) -> bool:
+    """
+    Alter the TTL of a ClickHouse table for a tenant
+
+    Args:
+        tenant_id: UUID of the tenant
+        retention_days: New retention period in days
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not ch_client:
+        logger.error("clickhouse_client_not_initialized")
+        return False
+
+    table_name = f"logs_{tenant_id.replace('-', '_')}"
+
+    alter_ttl_sql = f"""
+    ALTER TABLE oasis.{table_name}
+    MODIFY TTL timestamp + INTERVAL {retention_days} DAY;
+    """
+
+    try:
+        ch_client.command(alter_ttl_sql)
+        logger.info(
+            "clickhouse_table_ttl_updated", table_name=table_name, retention_days=retention_days
+        )
+        return True
+    except Exception as e:
+        logger.error("clickhouse_table_ttl_update_failed", error=str(e), tenant_id=tenant_id)
+        return False
+
+
+async def drop_clickhouse_table_for_tenant(tenant_id: str) -> bool:
+    """
+    Drop the ClickHouse table for a tenant (hard delete)
+
+    Args:
+        tenant_id: UUID of the tenant
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    if not ch_client:
+        logger.error("clickhouse_client_not_initialized")
+        return False
+
+    table_name = f"logs_{tenant_id.replace('-', '_')}"
+
+    drop_table_sql = f"DROP TABLE IF EXISTS oasis.{table_name};"
+
+    try:
+        ch_client.command(drop_table_sql)
+        logger.info("clickhouse_table_dropped", table_name=table_name, tenant_id=tenant_id)
+        return True
+    except Exception as e:
+        logger.error("clickhouse_table_drop_failed", error=str(e), tenant_id=tenant_id)
+        return False
+
+
+async def get_default_tenant_settings() -> tuple[int, int]:
+    """
+    Get default tenant settings from system_config
+
+    Returns:
+        tuple: (retention_days, eps_limit)
+    """
+    if not pg_pool:
+        return (90, 1000)  # Hardcoded fallback
+
+    try:
+        async with pg_pool.acquire() as conn:
+            retention_row = await conn.fetchrow(
+                "SELECT value FROM system_config WHERE key = 'default_tenant_retention_days'"
+            )
+            eps_row = await conn.fetchrow(
+                "SELECT value FROM system_config WHERE key = 'default_tenant_eps_limit'"
+            )
+
+            retention_days = int(retention_row["value"].strip('"')) if retention_row else 90
+            eps_limit = int(eps_row["value"].strip('"')) if eps_row else 1000
+
+            return (retention_days, eps_limit)
+    except Exception as e:
+        logger.error("failed_to_get_default_tenant_settings", error=str(e))
+        return (90, 1000)
+
+
 # Dependencies
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     """Validate JWT and return current user"""
@@ -2729,6 +2992,885 @@ async def get_agent_timeline(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch agent timeline: {str(e)}",
+        )
+
+
+# ============================================================================
+# Phase 2D-Part1: Tenant Management Endpoints
+# ============================================================================
+
+
+@app.post("/tenants", response_model=CreateTenantResponse, status_code=status.HTTP_201_CREATED)
+async def create_tenant(
+    request: CreateTenantRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Create a new tenant with auto-generated API key (Admin only)
+
+    - Validates name is unique
+    - Generates UUID and API key
+    - Creates ClickHouse table
+    - Returns full API key (shown only once)
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check permission
+    if current_user["credential_type"] != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators can create tenants",
+        )
+
+    # Validate tenant name (alphanumeric, spaces, hyphens, underscores)
+    import re
+
+    if not re.match(r"^[a-zA-Z0-9 \-_]{3,255}$", request.name):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant name must be 3-255 characters (alphanumeric, spaces, hyphens, underscores only)",
+        )
+
+    # Get default settings
+    default_retention, default_eps = await get_default_tenant_settings()
+    retention_days = (
+        request.retention_days if request.retention_days is not None else default_retention
+    )
+    eps_limit = request.eps_limit if request.eps_limit is not None else default_eps
+
+    # Validate ranges
+    if retention_days < 1 or retention_days > 365:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Retention days must be between 1 and 365",
+        )
+
+    if eps_limit < 100 or eps_limit > 100000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="EPS limit must be between 100 and 100,000",
+        )
+
+    try:
+        # Generate API key
+        full_key, key_prefix = generate_api_key()
+
+        # Hash the API key
+        from src.auth import hash_password
+
+        key_hash = hash_password(full_key)
+
+        async with pg_pool.acquire() as conn:
+            # Start transaction
+            async with conn.transaction():
+                # Check if tenant name already exists
+                existing = await conn.fetchrow(
+                    "SELECT id FROM tenants WHERE name = $1",
+                    request.name,
+                )
+
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Tenant with name '{request.name}' already exists",
+                    )
+
+                # Insert tenant
+                tenant_row = await conn.fetchrow(
+                    """
+                    INSERT INTO tenants (name, description, retention_days, eps_limit, is_active)
+                    VALUES ($1, $2, $3, $4, true)
+                    RETURNING id, name, description, retention_days, eps_limit, is_active, created_at
+                    """,
+                    request.name,
+                    request.description,
+                    retention_days,
+                    eps_limit,
+                )
+
+                tenant_id = str(tenant_row["id"])
+
+                # Insert API key
+                api_key_row = await conn.fetchrow(
+                    """
+                    INSERT INTO api_keys (tenant_id, key_hash, key_prefix, description, is_active)
+                    VALUES ($1, $2, $3, $4, true)
+                    RETURNING id
+                    """,
+                    tenant_id,
+                    key_hash,
+                    key_prefix,
+                    f"Initial API key for {request.name}",
+                )
+
+                # Create ClickHouse table
+                ch_success = await create_clickhouse_table_for_tenant(tenant_id)
+
+                if not ch_success:
+                    # Rollback will happen automatically due to transaction context
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail="Failed to create ClickHouse table for tenant",
+                    )
+
+                # Log to audit trail
+                await conn.execute(
+                    """
+                    INSERT INTO audit_logs (user_id, credential_id, action, resource_type, resource_id, changes, tenant_id)
+                    VALUES ($1, $2, 'tenant_created', 'tenant', $3, $4, $5)
+                    """,
+                    current_user["user_id"],
+                    current_user["credential_id"],
+                    tenant_id,
+                    json.dumps(
+                        {
+                            "name": request.name,
+                            "retention_days": retention_days,
+                            "eps_limit": eps_limit,
+                        }
+                    ),
+                    tenant_id,
+                )
+
+        logger.info(
+            "tenant_created",
+            tenant_id=tenant_id,
+            tenant_name=request.name,
+            user_id=current_user["user_id"],
+        )
+
+        return CreateTenantResponse(
+            id=tenant_id,
+            name=tenant_row["name"],
+            description=tenant_row["description"],
+            retention_days=tenant_row["retention_days"],
+            eps_limit=tenant_row["eps_limit"],
+            is_active=tenant_row["is_active"],
+            created_at=tenant_row["created_at"].isoformat(),
+            api_key=full_key,  # Full key shown only once
+            api_key_prefix=key_prefix,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("tenant_creation_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create tenant: {str(e)}",
+        )
+
+
+@app.get("/tenants", response_model=TenantListResponse)
+async def list_tenants(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 50,
+    offset: int = 0,
+    search: Optional[str] = None,
+    is_active: Optional[bool] = None,
+):
+    """
+    List all tenants with pagination and filtering (Admin only)
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check permission
+    if current_user["credential_type"] != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators can list tenants",
+        )
+
+    # Validate pagination
+    if limit < 1 or limit > 100:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit must be between 1 and 100",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Build query with filters
+            where_clauses = []
+            params = []
+            param_count = 1
+
+            if search:
+                where_clauses.append(
+                    f"(t.name ILIKE ${param_count} OR t.description ILIKE ${param_count})"
+                )
+                params.append(f"%{search}%")
+                param_count += 1
+
+            if is_active is not None:
+                where_clauses.append(f"t.is_active = ${param_count}")
+                params.append(is_active)
+                param_count += 1
+
+            where_sql = " AND ".join(where_clauses) if where_clauses else "TRUE"
+
+            # Get total count
+            count_query = f"SELECT COUNT(*) FROM tenants t WHERE {where_sql}"
+            total = await conn.fetchval(count_query, *params)
+
+            # Get tenants with stats
+            tenants_query = f"""
+            SELECT 
+                t.id,
+                t.name,
+                t.description,
+                t.retention_days,
+                t.eps_limit,
+                t.is_active,
+                t.created_at,
+                t.updated_at,
+                ak.key_prefix,
+                COUNT(DISTINCT a.id) as agent_count
+            FROM tenants t
+            LEFT JOIN api_keys ak ON t.id = ak.tenant_id AND ak.is_active = true
+            LEFT JOIN agents a ON t.id = a.tenant_id
+            WHERE {where_sql}
+            GROUP BY t.id, t.name, t.description, t.retention_days, t.eps_limit, t.is_active, t.created_at, t.updated_at, ak.key_prefix
+            ORDER BY t.created_at DESC
+            LIMIT ${param_count} OFFSET ${param_count + 1}
+            """
+            params.extend([limit, offset])
+
+            rows = await conn.fetch(tenants_query, *params)
+
+            tenants = []
+            for row in rows:
+                tenants.append(
+                    TenantResponse(
+                        id=str(row["id"]),
+                        name=row["name"],
+                        description=row["description"],
+                        retention_days=row["retention_days"],
+                        eps_limit=row["eps_limit"],
+                        is_active=row["is_active"],
+                        created_at=row["created_at"].isoformat(),
+                        updated_at=row["updated_at"].isoformat(),
+                        api_key_prefix=row["key_prefix"],
+                        agent_count=row["agent_count"],
+                        log_count=None,  # TODO: Query ClickHouse for log count (expensive)
+                    )
+                )
+
+        return TenantListResponse(
+            tenants=tenants,
+            total=total,
+            limit=limit,
+            offset=offset,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("tenant_list_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list tenants: {str(e)}",
+        )
+
+
+@app.get("/tenants/{tenant_id}", response_model=TenantDetailResponse)
+async def get_tenant(
+    tenant_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get detailed information about a specific tenant (Admin only)
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check permission
+    if current_user["credential_type"] != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators can view tenant details",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Get tenant info
+            tenant_row = await conn.fetchrow(
+                """
+                SELECT id, name, description, retention_days, eps_limit, is_active, created_at, updated_at
+                FROM tenants
+                WHERE id = $1
+                """,
+                tenant_id,
+            )
+
+            if not tenant_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Tenant not found",
+                )
+
+            # Get agent count
+            agent_count = await conn.fetchval(
+                "SELECT COUNT(*) FROM agents WHERE tenant_id = $1",
+                tenant_id,
+            )
+
+            # Get API keys
+            api_key_rows = await conn.fetch(
+                """
+                SELECT id, key_prefix, description, is_active, created_at, last_used_at, expires_at
+                FROM api_keys
+                WHERE tenant_id = $1
+                ORDER BY created_at DESC
+                """,
+                tenant_id,
+            )
+
+            api_keys = []
+            for row in api_key_rows:
+                api_keys.append(
+                    ApiKeyResponse(
+                        id=str(row["id"]),
+                        key_prefix=row["key_prefix"],
+                        description=row["description"],
+                        tenant_id=tenant_id,
+                        is_active=row["is_active"],
+                        created_at=row["created_at"].isoformat(),
+                        last_used_at=row["last_used_at"].isoformat()
+                        if row["last_used_at"]
+                        else None,
+                        expires_at=row["expires_at"].isoformat() if row["expires_at"] else None,
+                    )
+                )
+
+        # Get ClickHouse stats (last 24h)
+        log_count_24h = 0
+        log_count_total = 0
+        disk_usage_mb = 0.0
+        avg_eps = 0.0
+
+        if ch_client:
+            try:
+                table_name = f"logs_{tenant_id.replace('-', '_')}"
+
+                # Count logs in last 24h
+                result_24h = ch_client.query(
+                    f"SELECT COUNT(*) as count FROM oasis.{table_name} WHERE timestamp >= now() - INTERVAL 1 DAY"
+                )
+                if result_24h.result_rows:
+                    log_count_24h = result_24h.result_rows[0][0]
+
+                # Count total logs
+                result_total = ch_client.query(f"SELECT COUNT(*) as count FROM oasis.{table_name}")
+                if result_total.result_rows:
+                    log_count_total = result_total.result_rows[0][0]
+
+                # Get disk usage (rough estimate)
+                result_size = ch_client.query(
+                    f"SELECT formatReadableSize(sum(bytes_on_disk)) as size FROM system.parts WHERE database = 'oasis' AND table = '{table_name}'"
+                )
+                if result_size.result_rows:
+                    size_str = result_size.result_rows[0][0]
+                    # Parse size string (e.g., "2.50 GiB")
+                    # For now, just estimate from log count
+                    disk_usage_mb = log_count_total * 0.001  # Rough estimate: 1KB per log
+
+                # Calculate avg EPS for last 24h
+                if log_count_24h > 0:
+                    avg_eps = log_count_24h / (24 * 3600)
+
+            except Exception as e:
+                logger.warning("clickhouse_stats_failed", error=str(e), tenant_id=tenant_id)
+
+        stats = TenantStats(
+            agent_count=agent_count or 0,
+            log_count_24h=log_count_24h,
+            log_count_total=log_count_total,
+            disk_usage_mb=disk_usage_mb,
+            avg_eps=avg_eps,
+        )
+
+        return TenantDetailResponse(
+            id=str(tenant_row["id"]),
+            name=tenant_row["name"],
+            description=tenant_row["description"],
+            retention_days=tenant_row["retention_days"],
+            eps_limit=tenant_row["eps_limit"],
+            is_active=tenant_row["is_active"],
+            created_at=tenant_row["created_at"].isoformat(),
+            updated_at=tenant_row["updated_at"].isoformat(),
+            stats=stats,
+            api_keys=api_keys,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("tenant_get_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get tenant: {str(e)}",
+        )
+
+
+@app.put("/tenants/{tenant_id}", response_model=TenantResponse)
+async def update_tenant(
+    tenant_id: str,
+    request: UpdateTenantRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update tenant settings (Admin only)
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check permission
+    if current_user["credential_type"] != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators can update tenants",
+        )
+
+    # Validate ranges if provided
+    if request.retention_days is not None and (
+        request.retention_days < 1 or request.retention_days > 365
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Retention days must be between 1 and 365",
+        )
+
+    if request.eps_limit is not None and (request.eps_limit < 100 or request.eps_limit > 100000):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="EPS limit must be between 100 and 100,000",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Get current tenant data
+            old_tenant = await conn.fetchrow(
+                "SELECT name, description, retention_days, eps_limit, is_active FROM tenants WHERE id = $1",
+                tenant_id,
+            )
+
+            if not old_tenant:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Tenant not found",
+                )
+
+            # Check if name is changing and if new name is unique
+            if request.name and request.name != old_tenant["name"]:
+                existing = await conn.fetchrow(
+                    "SELECT id FROM tenants WHERE name = $1 AND id != $2",
+                    request.name,
+                    tenant_id,
+                )
+                if existing:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Tenant with name '{request.name}' already exists",
+                    )
+
+            # Build update query dynamically
+            updates = []
+            params = []
+            param_count = 1
+
+            if request.name is not None:
+                updates.append(f"name = ${param_count}")
+                params.append(request.name)
+                param_count += 1
+
+            if request.description is not None:
+                updates.append(f"description = ${param_count}")
+                params.append(request.description)
+                param_count += 1
+
+            if request.retention_days is not None:
+                updates.append(f"retention_days = ${param_count}")
+                params.append(request.retention_days)
+                param_count += 1
+
+            if request.eps_limit is not None:
+                updates.append(f"eps_limit = ${param_count}")
+                params.append(request.eps_limit)
+                param_count += 1
+
+            if request.is_active is not None:
+                updates.append(f"is_active = ${param_count}")
+                params.append(request.is_active)
+                param_count += 1
+
+            if not updates:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No fields to update",
+                )
+
+            updates.append(f"updated_at = NOW()")
+
+            update_sql = f"""
+            UPDATE tenants
+            SET {", ".join(updates)}
+            WHERE id = ${param_count}
+            RETURNING id, name, description, retention_days, eps_limit, is_active, created_at, updated_at
+            """
+            params.append(tenant_id)
+
+            tenant_row = await conn.fetchrow(update_sql, *params)
+
+            # If retention_days changed, update ClickHouse TTL
+            if (
+                request.retention_days is not None
+                and request.retention_days != old_tenant["retention_days"]
+            ):
+                await alter_clickhouse_table_ttl(tenant_id, request.retention_days)
+
+            # Log to audit trail
+            changes = {}
+            if request.name and request.name != old_tenant["name"]:
+                changes["name"] = {"old": old_tenant["name"], "new": request.name}
+            if request.retention_days and request.retention_days != old_tenant["retention_days"]:
+                changes["retention_days"] = {
+                    "old": old_tenant["retention_days"],
+                    "new": request.retention_days,
+                }
+            if request.eps_limit and request.eps_limit != old_tenant["eps_limit"]:
+                changes["eps_limit"] = {"old": old_tenant["eps_limit"], "new": request.eps_limit}
+
+            await conn.execute(
+                """
+                INSERT INTO audit_logs (user_id, credential_id, action, resource_type, resource_id, changes, tenant_id)
+                VALUES ($1, $2, 'tenant_updated', 'tenant', $3, $4, $5)
+                """,
+                current_user["user_id"],
+                current_user["credential_id"],
+                tenant_id,
+                json.dumps(changes),
+                tenant_id,
+            )
+
+        logger.info(
+            "tenant_updated",
+            tenant_id=tenant_id,
+            user_id=current_user["user_id"],
+        )
+
+        # Get API key prefix
+        api_key_prefix = None
+        async with pg_pool.acquire() as conn:
+            api_key_row = await conn.fetchrow(
+                "SELECT key_prefix FROM api_keys WHERE tenant_id = $1 AND is_active = true LIMIT 1",
+                tenant_id,
+            )
+            if api_key_row:
+                api_key_prefix = api_key_row["key_prefix"]
+
+        return TenantResponse(
+            id=str(tenant_row["id"]),
+            name=tenant_row["name"],
+            description=tenant_row["description"],
+            retention_days=tenant_row["retention_days"],
+            eps_limit=tenant_row["eps_limit"],
+            is_active=tenant_row["is_active"],
+            created_at=tenant_row["created_at"].isoformat(),
+            updated_at=tenant_row["updated_at"].isoformat(),
+            api_key_prefix=api_key_prefix,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("tenant_update_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update tenant: {str(e)}",
+        )
+
+
+@app.delete("/tenants/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_tenant(
+    tenant_id: str,
+    hard_delete: bool = False,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Delete tenant (soft delete by default, hard delete with ?hard_delete=true) (Admin only)
+
+    - Soft delete: Sets is_active=false, keeps all data
+    - Hard delete: Drops ClickHouse table, CASCADE deletes from PostgreSQL
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check permission
+    if current_user["credential_type"] != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators can delete tenants",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Check tenant exists
+            tenant_row = await conn.fetchrow(
+                "SELECT name FROM tenants WHERE id = $1",
+                tenant_id,
+            )
+
+            if not tenant_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Tenant not found",
+                )
+
+            tenant_name = tenant_row["name"]
+
+            if hard_delete:
+                # Hard delete: Drop ClickHouse table and delete from PostgreSQL
+                ch_success = await drop_clickhouse_table_for_tenant(tenant_id)
+
+                if not ch_success:
+                    logger.warning("clickhouse_table_drop_failed_continuing", tenant_id=tenant_id)
+
+                # Delete from PostgreSQL (CASCADE will delete related records)
+                await conn.execute(
+                    "DELETE FROM tenants WHERE id = $1",
+                    tenant_id,
+                )
+
+                action = "tenant_hard_deleted"
+            else:
+                # Soft delete: Just set is_active=false
+                await conn.execute(
+                    "UPDATE tenants SET is_active = false, updated_at = NOW() WHERE id = $1",
+                    tenant_id,
+                )
+
+                action = "tenant_soft_deleted"
+
+            # Log to audit trail
+            await conn.execute(
+                """
+                INSERT INTO audit_logs (user_id, credential_id, action, resource_type, resource_id, changes, tenant_id)
+                VALUES ($1, $2, $3, 'tenant', $4, $5, $6)
+                """,
+                current_user["user_id"],
+                current_user["credential_id"],
+                action,
+                tenant_id,
+                json.dumps({"tenant_name": tenant_name, "hard_delete": hard_delete}),
+                tenant_id if not hard_delete else None,
+            )
+
+        logger.info(
+            action,
+            tenant_id=tenant_id,
+            tenant_name=tenant_name,
+            hard_delete=hard_delete,
+            user_id=current_user["user_id"],
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("tenant_delete_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete tenant: {str(e)}",
+        )
+
+
+@app.post(
+    "/tenants/{tenant_id}/api-keys",
+    response_model=CreateApiKeyResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_api_key(
+    tenant_id: str,
+    request: CreateApiKeyRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Generate a new API key for a tenant (Admin only)
+
+    - Multiple active keys allowed per tenant (for key rotation)
+    - Full key shown only once
+    - Old keys remain active until manually deactivated
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check permission
+    if current_user["credential_type"] != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators can create API keys",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Verify tenant exists
+            tenant_row = await conn.fetchrow(
+                "SELECT name FROM tenants WHERE id = $1",
+                tenant_id,
+            )
+
+            if not tenant_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Tenant not found",
+                )
+
+            # Generate new API key
+            full_key, key_prefix = generate_api_key()
+
+            # Hash the API key
+            from src.auth import hash_password
+
+            key_hash = hash_password(full_key)
+
+            # Insert API key
+            api_key_row = await conn.fetchrow(
+                """
+                INSERT INTO api_keys (tenant_id, key_hash, key_prefix, description, is_active)
+                VALUES ($1, $2, $3, $4, true)
+                RETURNING id, created_at, expires_at
+                """,
+                tenant_id,
+                key_hash,
+                key_prefix,
+                request.description or f"API key generated for {tenant_row['name']}",
+            )
+
+            # Log to audit trail
+            await conn.execute(
+                """
+                INSERT INTO audit_logs (user_id, credential_id, action, resource_type, resource_id, changes, tenant_id)
+                VALUES ($1, $2, 'api_key_created', 'api_key', $3, $4, $5)
+                """,
+                current_user["user_id"],
+                current_user["credential_id"],
+                str(api_key_row["id"]),
+                json.dumps({"key_prefix": key_prefix, "description": request.description}),
+                tenant_id,
+            )
+
+        logger.info(
+            "api_key_created",
+            tenant_id=tenant_id,
+            key_prefix=key_prefix,
+            user_id=current_user["user_id"],
+        )
+
+        return CreateApiKeyResponse(
+            id=str(api_key_row["id"]),
+            api_key=full_key,  # Full key shown only once
+            key_prefix=key_prefix,
+            description=request.description,
+            tenant_id=tenant_id,
+            is_active=True,
+            created_at=api_key_row["created_at"].isoformat(),
+            expires_at=api_key_row["expires_at"].isoformat() if api_key_row["expires_at"] else None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("api_key_creation_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create API key: {str(e)}",
+        )
+
+
+@app.put("/api-keys/{key_id}/deactivate", response_model=ApiKeyResponse)
+async def deactivate_api_key(
+    key_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Deactivate an API key (Admin only)
+
+    - Key will immediately fail authentication
+    - Deactivation is permanent (cannot be reactivated)
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    # Check permission
+    if current_user["credential_type"] != "platform_admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators can deactivate API keys",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Update API key
+            api_key_row = await conn.fetchrow(
+                """
+                UPDATE api_keys
+                SET is_active = false
+                WHERE id = $1
+                RETURNING id, tenant_id, key_prefix, description, is_active, created_at, last_used_at, expires_at
+                """,
+                key_id,
+            )
+
+            if not api_key_row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="API key not found",
+                )
+
+            tenant_id = str(api_key_row["tenant_id"])
+
+            # Log to audit trail
+            await conn.execute(
+                """
+                INSERT INTO audit_logs (user_id, credential_id, action, resource_type, resource_id, changes, tenant_id)
+                VALUES ($1, $2, 'api_key_deactivated', 'api_key', $3, $4, $5)
+                """,
+                current_user["user_id"],
+                current_user["credential_id"],
+                key_id,
+                json.dumps({"key_prefix": api_key_row["key_prefix"]}),
+                tenant_id,
+            )
+
+        logger.info(
+            "api_key_deactivated",
+            key_id=key_id,
+            tenant_id=tenant_id,
+            user_id=current_user["user_id"],
+        )
+
+        return ApiKeyResponse(
+            id=str(api_key_row["id"]),
+            key_prefix=api_key_row["key_prefix"],
+            description=api_key_row["description"],
+            tenant_id=tenant_id,
+            is_active=api_key_row["is_active"],
+            created_at=api_key_row["created_at"].isoformat(),
+            last_used_at=api_key_row["last_used_at"].isoformat()
+            if api_key_row["last_used_at"]
+            else None,
+            expires_at=api_key_row["expires_at"].isoformat() if api_key_row["expires_at"] else None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("api_key_deactivation_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to deactivate API key: {str(e)}",
         )
 
 
