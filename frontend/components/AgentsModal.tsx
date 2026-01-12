@@ -3,6 +3,7 @@
 import { Agent } from '@/types/agent';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useEffect } from 'react';
+import AgentTimeline from './AgentTimeline';
 
 interface AgentsModalProps {
   agent: Agent | null;
@@ -173,6 +174,13 @@ export default function AgentsModal({ agent, onClose, formatLastSeen }: AgentsMo
               </code>
             </div>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+            Status Timeline
+          </h4>
+          <AgentTimeline agentId={agent.agent_id} days={7} />
         </div>
 
         <div className="mb-6">
