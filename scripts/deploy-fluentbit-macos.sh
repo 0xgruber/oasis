@@ -1,7 +1,7 @@
 #!/bin/bash
 ###############################################################################
 # O.A.S.I.S. Fluent Bit Agent Deployment Script (macOS)
-# 
+#
 # This script installs and configures Fluent Bit for log collection
 # and forwards logs to the O.A.S.I.S. Internal Gateway.
 #
@@ -12,9 +12,12 @@
 #   - Homebrew installed
 #   - sudo access
 #   - Network connectivity to O.A.S.I.S. Gateway
-#   - Valid API key and CA certificate
+#   - tenant.conf file (from O.A.S.I.S. Dashboard) in same directory as script
 #
 # Usage:
+#   # 1. Download tenant.conf from O.A.S.I.S. Dashboard
+#   # 2. Place tenant.conf in same directory as this script
+#   # 3. Run:
 #   sudo ./deploy-fluentbit-macos.sh
 #
 ###############################################################################
@@ -115,6 +118,42 @@ check_homebrew() {
     fi
     
     log_success "Homebrew is installed"
+}
+
+setup_tenant_config() {
+    log_info "Setting up tenant configuration..."
+
+    # Check if tenant.conf exists in script directory
+    local source_config="$SCRIPT_DIR/tenant.conf"
+
+    if [ ! -f "$source_config" ]; then
+        log_error "tenant.conf not found in script directory: $SCRIPT_DIR"
+        log_error "Please ensure tenant.conf is in the same directory as this script."
+        log_error ""
+        log_error "You can generate tenant.conf from the O.A.S.I.S. Dashboard."
+        exit 1
+    fi
+
+    # Create /etc/oasis directory if it doesn't exist
+    if [ ! -d "/etc/oasis" ]; then
+        mkdir -p "/etc/oasis"
+        log_info "Created directory: /etc/oasis"
+    fi
+
+    # Copy tenant.conf to /etc/oasis/
+    log_info "Copying tenant.conf to $TENANT_CONFIG..."
+    cp "$source_config" "$TENANT_CONFIG"
+    chmod 600 "$TENANT_CONFIG"
+    log_success "Tenant configuration copied"
+
+    # Read tenant.conf to extract certificate for later use
+    OASIS_CA_CERT=$(awk '/-----BEGIN CERTIFICATE-----/, /-----END CERTIFICATE-----/' "$source_config")
+
+    if [ -z "$OASIS_CA_CERT" ]; then
+        log_warning "No certificate found in tenant.conf (may be optional)"
+    else
+        log_success "Certificate found in tenant.conf"
+    fi
 }
 
 load_tenant_config() {
@@ -511,6 +550,7 @@ main() {
     detect_architecture
     check_macos_version
     check_homebrew
+    setup_tenant_config
     load_tenant_config
     
     install_fluent_bit
