@@ -224,6 +224,62 @@ load_tenant_config() {
     log_info "  Tenant:  $OASIS_TENANT_ID"
 }
 
+fix_homebrew_permissions() {
+    log_info "Checking Homebrew installation and permissions..."
+
+    # Get current user (handle both sudo and non-sudo contexts)
+    local current_user=${SUDO_USER:-$(whoami)}
+
+    log_info "Current user: $current_user"
+    log_info "Fixing any Homebrew permission issues..."
+
+    # Run brew doctor to check for issues
+    if su - ${current_user} -c "brew doctor &> /dev/null" ; then
+        log_success "Homebrew installation is healthy"
+    else
+        log_warning "Homebrew doctor found issues"
+        su - ${current_user} -c "brew doctor" || true
+    fi
+
+    # Fix common permission issues in Homebrew directories
+    log_info "Checking and fixing Homebrew directory permissions..."
+
+    local brew_dirs=(
+        "/usr/local"
+        "/usr/local/bin"
+        "/usr/local/etc"
+        "/usr/local/lib"
+        "/usr/local/share"
+        "/usr/local/share/man"
+        "/usr/local/share/man/man8"
+    )
+
+    local fixed_count=0
+    for dir in "${brew_dirs[@]}"; do
+        if [ -d "$dir" ]; then
+            local dir_owner=$(stat -f "%u" "$dir" 2>/dev/null || stat -c "%u" "$dir" 2>/dev/null || echo "0")
+            local current_uid=$(id -u)
+            
+            if [ "$dir_owner" != "$current_uid" ] && [ -n "$SUDO_USER" ]; then
+                log_info "Fixing ownership of: $dir"
+                chown -R ${current_user} "$dir" 2>/dev/null && fixed_count=$((fixed_count + 1))
+            fi
+        fi
+    done
+
+    # Ensure Homebrew can write to its directories
+    if [ -f "/usr/local/bin/brew" ] || [ -f "/opt/homebrew/bin/brew" ]; then
+        log_success "Homebrew binary found and accessible"
+    else
+        log_warning "Homebrew binary not found in standard location"
+        log_info "You may need to reinstall Homebrew if permission fixes didn't help"
+    fi
+
+    if [ $fixed_count -gt 0 ]; then
+        log_success "Fixed permissions for $fixed_count directories"
+    fi
+}
+
 install_fluent_bit() {
     log_info "Installing Fluent Bit via Homebrew..."
     
@@ -552,7 +608,7 @@ main() {
     check_homebrew
     setup_tenant_config
     load_tenant_config
-    
+    fix_homebrew_permissions
     install_fluent_bit
     register_agent
     create_config
