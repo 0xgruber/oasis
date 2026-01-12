@@ -1,6 +1,6 @@
 # O.A.S.I.S. Phase Tracker
 
-**Last Updated:** 2026-01-12 (Phase 2C in progress - subscriptions, dashboards, agent timeline APIs)
+**Last Updated:** 2026-01-12 (Phase 2C ~85% complete - dashboard builder remaining)
 
 ## Current Status
 
@@ -347,11 +347,11 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - [x] API: `DELETE /api/dashboards/{id}` (soft delete dashboard)
 - [x] API: `GET /api/agents/{id}/timeline` (agent status history)
 - [x] S.O.C.A.P.: "My Tenants" vs "All Tenants" toggle (agents page)
-- [ ] S.O.C.A.P.: "My Tenants" vs "All Tenants" toggle (dashboard page)
+- [x] S.O.C.A.P.: "My Tenants" vs "All Tenants" toggle (dashboard page)
 - [ ] S.O.C.A.P.: Custom dashboard builder (drag-drop widgets)
-- [ ] S.O.C.A.P.: Agent status timeline visualization (last 7 days)
-- [ ] S.O.C.A.P.: Clickable drill-downs (tenant → agents → logs)
-- [ ] UI components: Alert placeholders (for Phase 3 integration)
+- [x] S.O.C.A.P.: Agent status timeline visualization (last 7 days)
+- [x] S.O.C.A.P.: Clickable drill-downs (tenant → agents → logs)
+- [x] UI components: Alert placeholders (for Phase 3 integration)
 
 **Subscription Model:**
 - Analysts can see ALL tenants (no hard restrictions)
@@ -392,6 +392,22 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 |--------|---------|
 | 1971b80 | feat(phase2c): add analyst dashboard, subscription, and agent timeline APIs |
 | 17c4bbb | feat(soc-portal): add 'My Tenants' toggle to agents page |
+| dc199e9 | feat(phase2c): add 'My Tenants' toggle to SOC dashboard page |
+| b961683 | feat(phase2c): add agent status timeline visualization |
+| 2598ec6 | feat(phase2c): add clickable drill-downs for tenant/agent logs |
+| 6bfbb48 | feat(phase2c): add alert and dashboard placeholders for Phase 3 |
+
+**Features Implemented:**
+- **Tenant Subscription Toggle:** SOC analysts can toggle between "All Tenants" and "My Subscribed Tenants" on both dashboard and agents pages
+- **Agent Status Timeline:** Visual timeline showing agent status changes over the last 7 days with color-coded status dots
+- **Drill-Down Navigation:** Click agent → view logs filtered by agent or tenant, seamless navigation flow
+- **Alert Placeholders:** "Active Alerts" metric card and "Configure Alerts" action marked as "Phase 3" with tooltips
+- **Smart Log Filtering:** Logs page supports URL parameters (?tenant_id=X or ?agent_id=Y) with active filter badges
+
+**Notes:**
+- Phase 2C is ~85% complete - all backend APIs implemented, most frontend components done
+- Custom dashboard builder (drag-drop widgets) is the only remaining major feature
+- This feature can be deferred to later if needed, as basic dashboard functionality exists
 
 ---
 
