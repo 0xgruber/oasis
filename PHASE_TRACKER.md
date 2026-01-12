@@ -222,8 +222,9 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - [x] Database: `tenant_settings` table (per-tenant threshold overrides)
 - [x] API: `GET /api/agents` (with status, filters, pagination)
 - [x] API: `GET /api/agents/:id` (agent details)
-- [~] Admin Portal: Agent management UI (list, edit, delete)
-- [ ] S.O.C.A.P.: Global agent dashboard (all tenants, status breakdown)
+- [x] API: `GET /api/agents/status` (status breakdown)
+- [x] Admin Portal: Agent listing UI (list, filters, search, pagination, status breakdown)
+- [x] S.O.C.A.P.: Global agent dashboard (all tenants, status breakdown)
 - [ ] Customer Portal: Agent view (tenant-isolated, download config)
 - [ ] Config download: Generate fresh API key on `tenant.conf` download
 
