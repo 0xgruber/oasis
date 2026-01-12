@@ -105,6 +105,47 @@ For distributed deployments across multiple Docker hosts:
 
 ## Phase 2 Features
 
+### Phase 2C: Analyst Dashboards & Workflows (In Progress)
+**Priority:** High  
+**Effort:** 2-3 weeks  
+**Status:** In Progress (started 2026-01-12)
+
+Build dashboard and subscription features for SOC analysts to monitor tenants effectively.
+
+**Completed:**
+- ✅ Subscription system (subscribe to specific tenants)
+- ✅ API endpoints for subscriptions (CRUD operations)
+- ✅ Dashboard templates system (shareable dashboards)
+- ✅ API endpoints for dashboards (CRUD operations)
+- ✅ Agent timeline tracking (historical status changes)
+- ✅ "My Tenants" toggle on agents page
+
+**Remaining:**
+- [ ] Dashboard builder UI (drag-drop widgets)
+- [ ] Agent timeline visualization (status history chart)
+- [ ] Drill-down navigation (tenant → agents → logs)
+- [ ] "My Tenants" toggle on dashboard page
+- [ ] Alert placeholders for Phase 3
+
+**Features:**
+- **Subscription Model:** Analysts subscribe to tenants with notification levels (all, critical_only, none)
+- **Custom Dashboards:** Create dashboards with configurable widgets (timeseries, bar charts, status cards)
+- **Dashboard Templates:** Share dashboards across analysts (is_template flag)
+- **Tenant Filtering:** Filter by all tenants, subscribed tenants, or specific tenants
+- **Agent Timeline:** View historical status changes (online/offline/dead) over 1-90 days
+- **Default Templates:** SOC Overview (system-wide metrics), Tenant Health (per-tenant metrics)
+
+**Database Schema:**
+- `dashboard_templates` table: Custom dashboards with widgets, tenant scope, soft delete
+- `agent_status_timeline` table: Historical status changes with 90-day auto-cleanup
+
+**API Endpoints:**
+- `GET/POST/PUT/DELETE /api/subscriptions` - Manage analyst subscriptions
+- `GET/POST/GET/DELETE /api/dashboards` - Manage custom dashboards
+- `GET /api/agents/{id}/timeline?days=N` - Get agent status history
+
+---
+
 ### Customer Portal (Separate Deployment)
 **Priority:** High  
 **Effort:** 4-6 weeks
