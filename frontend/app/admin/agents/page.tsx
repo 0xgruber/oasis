@@ -4,34 +4,8 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { tokenUtils } from '@/lib/auth';
-import Toast from '@/components/Toast';
-
-interface Agent {
-  agent_id: string;
-  hostname: string;
-  tenant_id: string;
-  last_seen: string | null;
-  status: 'online' | 'offline' | 'dead' | 'unknown';
-  os_type: string | null;
-  os_version: string | null;
-  agent_type: string;
-  agent_role?: 'agent' | 'collector';
-}
-
-interface AgentListResponse {
-  agents: Agent[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-interface AgentStatusBreakdown {
-  online: number;
-  offline: number;
-  dead: number;
-  unknown: number;
-  total: number;
-}
+import AgentsModal from '@/components/AgentsModal';
+import { Agent, AgentListResponse, AgentStatusBreakdown } from '@/types/agent';
 
 export default function AgentsPage() {
   const { user } = useAuth();
@@ -55,9 +29,9 @@ export default function AgentsPage() {
 
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  // Agent detail toast
-  const [showToast, setShowToast] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
+  // Agent detail modal
+  const [showAgentModal, setShowAgentModal] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
 
   const fetchBreakdown = async () => {
     try {
@@ -115,6 +89,16 @@ export default function AgentsPage() {
     fetchAgents();
     fetchBreakdown();
   }, [statusFilter, offset]);
+
+  useEffect(() => {
+    const handleEscKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && showAgentModal) {
+        setShowAgentModal(false);
+      }
+    };
+    document.addEventListener('keydown', handleEscKey);
+    return () => document.removeEventListener('keydown', handleEscKey);
+  }, [showAgentModal]);
 
   const getStatusBadgeStyle = (status: string) => {
     const baseStyle = 'px-2 py-1 rounded text-xs font-semibold';
@@ -178,20 +162,6 @@ export default function AgentsPage() {
     
     const diffMonths = Math.floor(diffDays / 30);
     return `${diffMonths}mo ago`;
-  };
-
-  const formatAgentDetails = (agent: Agent): string => {
-    const details = [
-      `Agent ID: ${agent.agent_id}`,
-      `Hostname: ${agent.hostname}`,
-      `Status: ${agent.status.toUpperCase()}`,
-      `OS: ${agent.os_type || 'Unknown'} ${agent.os_version || ''}`,
-      `Type: ${agent.agent_type}`,
-      `Role: ${agent.agent_role === 'collector' ? 'Collector' : 'Agent'}`,
-      `Last Seen: ${formatLastSeen(agent.last_seen)}`,
-    ].join('\n\n');
-    
-    return `Agent Details\n\n${details}`;
   };
 
   const filteredAgents = agents.filter(agent => {
@@ -386,8 +356,8 @@ export default function AgentsPage() {
                   <tr
                     key={agent.agent_id}
                     onClick={() => {
-                      setToastMessage(formatAgentDetails(agent));
-                      setShowToast(true);
+                      setSelectedAgent(agent);
+                      setShowAgentModal(true);
                     }}
                     style={{ 
                       borderBottom: idx < filteredAgents.length - 1 ? `1px solid var(--card-border)` : undefined 
@@ -475,12 +445,12 @@ export default function AgentsPage() {
           </div>
         </div>
       )}
-
-      {showToast && (
-        <Toast
-          message={toastMessage}
-          onClose={() => setShowToast(false)}
-          showPickaxe={false}
+ 
+      {showAgentModal && selectedAgent && (
+        <AgentsModal 
+          agent={selectedAgent}
+          onClose={() => setShowAgentModal(false)}
+          formatLastSeen={formatLastSeen}
         />
       )}
     </div>
