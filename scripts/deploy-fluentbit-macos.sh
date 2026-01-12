@@ -193,22 +193,63 @@ install_fluent_bit() {
     else
         su - ${SUDO_USER} -c "brew install fluent-bit"
     fi
-    
+
     log_success "Fluent Bit installed successfully"
+}
+
+# === ENHANCED SYSTEM INFORMATION COLLECTION ===
+
+get_macos_version() {
+    echo "$(sw_vers -productName) $(sw_vers -productVersion)"
+}
+
+get_system_arch() {
+    local arch=$(uname -m)
+    case $arch in
+        x86_64) echo "x86_64 (Intel)" ;;
+        arm64) echo "arm64 (Apple Silicon)" ;;
+        *) echo "$arch" ;;
+    esac
+}
+
+get_all_mac_addresses() {
+    ifconfig -a | grep -E "ether " | while read line; do
+        iface=$(echo $line | awk '{print $1}')
+        mac=$(echo $line | grep -oE '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}')
+        echo "$iface: $mac"
+    done
+}
+
+get_network_interfaces() {
+    ifconfig -a | grep -E "^[a-zA-Z0-9]+:" | awk '{print $1}' | tr -d ':'
 }
 
 register_agent() {
     log_info "Registering agent with O.A.S.I.S...."
-    
+
     local hostname=$(hostname -s)
-    local os_version=$(sw_vers -productVersion)
+    local os_version=$(get_macos_version)
     local agent_version=$(fluent-bit --version | head -n1 | awk '{print $3}')
-    local arch=$(uname -m)
-    
+
+    local arch=$(get_system_arch)
+    local mac_addresses=$(get_all_mac_addresses | tr '\n' ';' | sed 's/;$//')
+    local interfaces=$(get_network_interfaces | tr '\n' ',' | sed 's/,$//')
+
+    local metadata="{
+        \"deployment_script\": \"deploy-fluentbit-macos.sh\",
+        \"deployment_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+        \"architecture\": \"${arch}\",
+        \"mac_addresses\": \"${mac_addresses}\",
+        \"network_interfaces\": \"${interfaces}\"
+    }"
+
+    log_debug "OS Version: ${os_version}"
+    log_debug "Architecture: ${arch}"
+
     # Write embedded CA certificate to temp file for curl
     local temp_cert=$(mktemp)
     echo "$OASIS_CA_CERT" > "$temp_cert"
-    
+
     # Register agent via API
     local response=$(curl -s -w "\n%{http_code}" -X POST \
         "https://${OASIS_GATEWAY_HOST}:${OASIS_GATEWAY_PORT}/api/v1/agents/register" \
@@ -221,11 +262,7 @@ register_agent() {
             \"os_type\": \"macOS\",
             \"os_version\": \"${os_version}\",
             \"agent_version\": \"${agent_version}\",
-            \"metadata\": {
-                \"deployment_script\": \"deploy-fluentbit-macos.sh\",
-                \"deployment_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
-                \"architecture\": \"${arch}\"
-            }
+            \"metadata\": ${metadata}
         }")
     
     # Cleanup temp cert

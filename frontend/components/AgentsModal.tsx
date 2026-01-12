@@ -66,49 +66,52 @@ export default function AgentsModal({ agent, onClose, formatLastSeen }: AgentsMo
                 }`}>
                   {agent.status.toUpperCase()}
                 </span>
-              </div>
-            </div>
+          </div>
+        </div>
 
-            <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
-              <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Hostname</div>
-              <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                {agent.hostname}
-              </div>
-            </div>
+        <div className="mb-6">
+          <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+            System Information
+          </h4>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
 
-            <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
-              <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Role</div>
-              <div className="font-medium">
-                <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                  agent.agent_role === 'collector'
-                    ? 'bg-purple-100 text-purple-800'
-                    : 'bg-blue-100 text-blue-800'
-                }`}>
-                  {agent.agent_role === 'collector' ? 'Collector' : 'Agent'}
-                </span>
+            {agent.architecture && (
+              <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Architecture</div>
+                <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {agent.architecture}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
-              <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Operating System</div>
-              <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                {agent.os_type || 'Unknown'} {agent.os_version || ''}
+            {agent.kernel_version && (
+              <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Kernel Version</div>
+                <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                  {agent.kernel_version}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
-              <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Last Seen</div>
-              <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                {formatLastSeen(agent.last_seen)}
+            {agent.network_interfaces && (
+              <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Network Interfaces</div>
+                <div className="font-medium text-xs" style={{ color: 'var(--text-primary)' }}>
+                  {agent.network_interfaces}
+                </div>
               </div>
-            </div>
+            )}
 
-            <div className="p-3 rounded" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
-              <div className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>Agent Type</div>
-              <div className="font-medium" style={{ color: 'var(--text-primary)' }}>
-                {agent.agent_type}
+            {agent.mac_addresses && (
+              <div className="p-3 rounded col-span-2" style={{ background: 'rgba(0, 0, 0, 0.3)' }}>
+                <div className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>MAC Addresses</div>
+                <div className="font-mono text-xs space-y-1" style={{ color: 'var(--text-primary)' }}>
+                  {agent.mac_addresses.split(';').map((mac, i) => (
+                    <div key={i}>{mac}</div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 

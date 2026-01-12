@@ -138,6 +138,10 @@ class DatabasePool:
         agent_version: Optional[str] = None,
         ip_address: Optional[str] = None,
         metadata: Optional[dict] = None,
+        architecture: Optional[str] = None,
+        kernel_version: Optional[str] = None,
+        mac_addresses: Optional[str] = None,
+        network_interfaces: Optional[str] = None,
     ) -> str:
         """
         Register or update an agent
@@ -146,11 +150,15 @@ class DatabasePool:
             tenant_id: UUID of the tenant
             hostname: Hostname of the agent
             agent_type: Type of agent (e.g., 'vector')
-            os_type: Operating system type (e.g., 'linux', 'macos')
+            os_type: Operating system type (e.g., 'linux', 'macos', 'windows')
             os_version: Optional OS version
             agent_version: Optional agent version
             ip_address: Optional IP address
             metadata: Optional additional metadata
+            architecture: Optional system architecture
+            kernel_version: Optional kernel version (Linux systems only)
+            mac_addresses: Optional semicolon-separated MAC addresses with interface names
+            network_interfaces: Optional comma-separated network interface names
 
         Returns:
             UUID of the agent
@@ -171,7 +179,7 @@ class DatabasePool:
 
                 agent_id = await conn.fetchval(
                     """
-                    SELECT upsert_agent($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+                    SELECT upsert_agent($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12)
                     """,
                     tenant_id,
                     hostname,
@@ -181,6 +189,10 @@ class DatabasePool:
                     agent_version,
                     ip_address,
                     metadata_json,
+                    architecture,
+                    kernel_version,
+                    mac_addresses,
+                    network_interfaces,
                 )
 
                 logger.info(

@@ -8,6 +8,10 @@ export interface Agent {
   os_version: string | null;
   agent_type: string;
   agent_role?: 'agent' | 'collector';
+  architecture?: string | null;
+  kernel_version?: string | null;
+  mac_addresses?: string | null;
+  network_interfaces?: string | null;
 }
 
 export interface AgentListResponse {

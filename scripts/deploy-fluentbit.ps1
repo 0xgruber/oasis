@@ -291,13 +291,60 @@ function Install-FluentBit {
     }
 }
 
+# === ENHANCED SYSTEM INFORMATION COLLECTION ===
+
+function Get-WindowsVersion {
+    # Get Windows version directly from registry
+    $reg = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+    return "$($reg.ProductName) $($reg.DisplayVersion) (Build: $($reg.CurrentBuild).$($reg.UBR))"
+}
+
+function Get-SystemArchitecture {
+    $arch = $env:PROCESSOR_ARCHITECTURE
+    switch ($arch) {
+        "AMD64" { return "AMD64 (64-bit)" }
+        "ARM64" { return "ARM64 (64-bit ARM)" }
+        "x86" { return "x86 (32-bit)" }
+        default { return $arch }
+    }
+}
+
+function Get-AllMacAddresses {
+    try {
+        $adapters = Get-NetAdapter | Where-Object { $_.Status -eq "Up" -or $_.Status -eq "Disconnected" }
+        $macList = @()
+        foreach ($adapter in $adapters) {
+            $mac = $adapter.MacAddress -replace "-", ":"
+            $macList += "$($adapter.Name): $mac"
+        }
+        return ($macList -join ";")
+    }
+    catch {
+        return "Error collecting MAC addresses: $($_.Exception.Message)"
+    }
+}
+
+function Get-NetworkInterfaces {
+    try {
+        $interfaces = Get-NetAdapter | Select-Object -ExpandProperty Name
+        return ($interfaces -join ",")
+    }
+    catch {
+        return "Error collecting interfaces: $($_.Exception.Message)"
+    }
+}
+
 function Register-Agent {
     Write-Info "Registering agent with O.A.S.I.S...."
-    
+
     $hostname = $env:COMPUTERNAME
-    $osVersion = [System.Environment]::OSVersion.VersionString
+    $osVersion = Get-WindowsVersion
     $agentVersion = & "$INSTALL_DIR\bin\fluent-bit.exe" --version 2>&1 | Select-String -Pattern "Fluent Bit v([0-9\.]+)" | ForEach-Object { $_.Matches.Groups[1].Value }
-    
+
+    $arch = Get-SystemArchitecture
+    $macAddresses = Get-AllMacAddresses
+    $interfaces = Get-NetworkInterfaces
+
     $body = @{
         hostname = $hostname
         agent_type = "fluent-bit"
@@ -307,8 +354,14 @@ function Register-Agent {
         metadata = @{
             deployment_script = "deploy-fluentbit.ps1"
             deployment_date = (Get-Date -Format "o")
+            architecture = $arch
+            mac_addresses = $macAddresses
+            network_interfaces = $interfaces
         }
     } | ConvertTo-Json
+
+    Write-Debug "OS Version: $osVersion"
+    Write-Debug "Architecture: $arch"
     
     try {
         $headers = @{

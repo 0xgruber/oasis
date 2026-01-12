@@ -81,6 +81,14 @@ async def register_agent(
     )
 
     try:
+        # Extract enhanced fields from agent metadata (collected by agent)
+        architecture = (agent.metadata or {}).get("architecture") if agent.metadata else None
+        kernel_version = (agent.metadata or {}).get("kernel_version") if agent.metadata else None
+        mac_addresses = (agent.metadata or {}).get("mac_addresses") if agent.metadata else None
+        network_interfaces = (
+            (agent.metadata or {}).get("network_interfaces") if agent.metadata else None
+        )
+
         # Upsert agent record using the database function
         agent_id = await db_pool.upsert_agent(
             tenant_id=tenant_id,
@@ -91,6 +99,10 @@ async def register_agent(
             agent_version=agent.agent_version,
             ip_address=client_ip,
             metadata=agent.metadata,
+            architecture=architecture,
+            kernel_version=kernel_version,
+            mac_addresses=mac_addresses,
+            network_interfaces=network_interfaces,
         )
 
         logger.info(

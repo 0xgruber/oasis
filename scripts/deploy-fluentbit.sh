@@ -439,18 +439,92 @@ EOF
     log_success "Fluent Bit installed successfully"
 }
 
+# === ENHANCED SYSTEM INFORMATION COLLECTION ===
+
+get_full_os_version() {
+    # Get full OS version including patch level
+    if command -v lsb_release >/dev/null 2>&1; then
+        lsb_release -d -s
+    elif [ -f /etc/os-release ]; then
+        grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"'
+    else
+        echo "Linux $(uname -r)"
+    fi
+}
+
+get_system_arch() {
+    # Get system architecture in human-readable format
+    local arch=$(uname -m)
+    case $arch in
+        x86_64) echo "x86_64 (64-bit)" ;;
+        aarch64|arm64) echo "aarch64 (64-bit ARM)" ;;
+        i386|i686) echo "x86 (32-bit)" ;;
+        armv7l) echo "armv7l (32-bit ARM)" ;;
+        *) echo "$arch" ;;
+    esac
+}
+
+get_kernel_version() {
+    uname -r
+}
+
+get_all_mac_addresses() {
+    if command -v ip >/dev/null 2>&1; then
+        ip link show | grep -E "link/ether" | while read line; do
+            iface=$(echo $line | awk '{print $2}' | tr -d ':')
+            mac=$(echo $line | grep -oE '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}')
+            echo "$iface: $mac"
+        done
+    elif command -v ifconfig >/dev/null 2>&1; then
+        ifconfig -a | grep -E "ether " | while read line; do
+            iface=$(echo $line | awk '{print $1}')
+            mac=$(echo $line | grep -oE '([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}')
+            echo "$iface: $mac"
+        done
+    fi
+}
+
+get_network_interfaces() {
+    if command -v ip >/dev/null 2>&1; then
+        ip -j addr show 2>/dev/null | jq -r '.[] | "\(.ifname)"' 2>/dev/null || \
+        ip addr show | grep -E "^[0-9]+:" | awk '{print $2}' | tr -d ':'
+    elif command -v ifconfig >/dev/null 2>&1; then
+        ifconfig -a | grep -E "^[a-zA-Z]" | awk '{print $1}' | tr -d ':'
+    else
+        ls -1 /sys/class/net/ 2>/dev/null
+    fi
+}
+
 register_agent() {
     log_info "Registering agent with O.A.S.I.S...."
-    
+
     local hostname=$(hostname)
     local os_type="Linux"
-    local os_version="$OS $OS_VERSION"
+    local os_version=$(get_full_os_version)
     local agent_version=$(fluent-bit --version | head -n1 | awk '{print $3}')
-    
+
+    local arch=$(get_system_arch)
+    local kernel_version=$(get_kernel_version)
+    local mac_addresses=$(get_all_mac_addresses | tr '\n' ';' | sed 's/;$//')
+    local interfaces=$(get_network_interfaces | tr '\n' ',' | sed 's/,$//')
+
+    local metadata="{
+        \"deployment_script\": \"deploy-fluentbit.sh\",
+        \"deployment_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",
+        \"architecture\": \"${arch}\",
+        \"kernel_version\": \"${kernel_version}\",
+        \"mac_addresses\": \"${mac_addresses}\",
+        \"network_interfaces\": \"${interfaces}\"
+    }"
+
     # Write CA cert temporarily for registration
     local temp_ca="/tmp/oasis-ca-$$.pem"
     echo "$OASIS_CA_CERT" > "$temp_ca"
-    
+
+    log_debug "OS Version: ${os_version}"
+    log_debug "Architecture: ${arch}"
+    log_debug "Kernel: ${kernel_version}"
+
     # Register agent via API
     local response=$(curl -s -w "\n%{http_code}" -X POST \
         "https://${OASIS_GATEWAY_HOST}:${OASIS_GATEWAY_PORT}/api/v1/agents/register" \
@@ -463,10 +537,7 @@ register_agent() {
             \"os_type\": \"${os_type}\",
             \"os_version\": \"${os_version}\",
             \"agent_version\": \"${agent_version}\",
-            \"metadata\": {
-                \"deployment_script\": \"deploy-fluentbit.sh\",
-                \"deployment_date\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
-            }
+            \"metadata\": ${metadata}
         }")
     
     local http_code=$(echo "$response" | tail -n1)
