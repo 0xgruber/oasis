@@ -38,7 +38,7 @@ export default function AdminSidebar() {
         style={{ borderBottom: `1px solid var(--sidebar-border)` }}
       >
         <h1 
-          className={`text-xl font-bold ${theme === 'cyber' ? 'glitch-text text-glow' : 'text-white'}`}
+          className={`text-xl font-bold ${theme === 'cyber' ? 'glitch-text text-glow' : ''}`}
           data-text="O.A.S.I.S."
           style={{ color: 'var(--text-primary)' }}
         >
@@ -69,20 +69,19 @@ export default function AdminSidebar() {
               key={item.name}
               href={item.href}
               className={`flex items-center px-3 py-3 mb-2 rounded-lg text-sm font-medium transition-colors ${
-                active
+                active 
                   ? theme === 'cyber' 
                     ? 'text-white' 
-                    : 'bg-purple-600 text-white'
+                    : ''
                   : theme === 'cyber'
                     ? 'hover:text-white'
-                    : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                    : ''
               }`}
               style={active ? { 
-                background: theme === 'cyber' ? '#a855f7' : undefined,
-                boxShadow: theme === 'cyber' ? '0 0 20px rgba(168, 85, 247, 0.3)' : undefined,
-                color: theme === 'cyber' ? '#0a0e27' : undefined
+                background: theme === 'cyber' ? '#a855f7' : 'var(--primary)',
+                color: theme === 'cyber' ? '#0a0e27' : 'white'
               } : {
-                color: theme === 'cyber' ? 'var(--text-secondary)' : undefined
+                color: theme === 'cyber' ? 'var(--text-secondary)' : 'var(--text-secondary)'
               }}
             >
               <span className="mr-3 text-lg">{item.icon}</span>

@@ -45,7 +45,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           style={{ borderBottom: `1px solid var(--sidebar-border)` }}
         >
           <h1 
-            className={`text-xl font-bold ${theme === 'cyber' ? 'glitch-text text-glow' : 'text-white'}`}
+            className={`text-xl font-bold ${theme === 'cyber' ? 'glitch-text text-glow' : ''}`}
             data-text="O.A.S.I.S."
             style={{ color: 'var(--text-primary)' }}
           >
@@ -62,20 +62,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 key={item.name}
                 href={item.href}
                 className={`flex items-center px-3 py-3 mb-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive
+                  isActive 
                     ? theme === 'cyber' 
                       ? 'text-white' 
-                      : 'bg-blue-600 text-white'
+                      : ''
                     : theme === 'cyber'
                       ? 'hover:text-white'
-                      : 'text-slate-300 hover:bg-slate-700 hover:text-white'
+                      : ''
                 }`}
                 style={isActive ? { 
-                  background: theme === 'cyber' ? 'var(--primary)' : undefined,
-                  boxShadow: theme === 'cyber' ? '0 0 20px rgba(0, 255, 159, 0.3)' : undefined,
-                  color: theme === 'cyber' ? '#0a0e27' : undefined
+                  background: theme === 'cyber' ? 'var(--primary)' : 'var(--primary)',
+                  color: theme === 'cyber' ? '#0a0e27' : 'white'
                 } : {
-                  color: theme === 'cyber' ? 'var(--text-secondary)' : undefined
+                  color: theme === 'cyber' ? 'var(--text-secondary)' : 'var(--text-secondary)'
                 }}
               >
                 <span className="mr-3 text-lg">{item.icon}</span>
@@ -120,7 +119,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="text-sm"
               style={{ color: 'var(--text-secondary)' }}
             >
-              Tenant: <span style={{ color: 'var(--text-primary)' }}>{user?.tenant_id?.slice(0, 8)}</span>
+              Tenant: <span style={{ color: 'var(--text-primary)' }}>{user?.tenant_id}</span>
             </span>
           </div>
         </header>

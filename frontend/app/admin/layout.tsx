@@ -2,7 +2,6 @@
 
 import { ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useTheme } from '@/contexts/ThemeContext';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import AdminSidebar from '@/components/AdminSidebar';
@@ -15,7 +14,6 @@ import AdminSidebar from '@/components/AdminSidebar';
  */
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
-  const { theme } = useTheme();
   const router = useRouter();
 
   // Client-side credential check (belt-and-suspenders with middleware)

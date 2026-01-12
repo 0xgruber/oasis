@@ -52,7 +52,7 @@
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: 'Courier New', monospace;
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
