@@ -33,27 +33,40 @@ class OCSFNormalizer:
                 timestamp = datetime.utcnow()
 
             # Map severity to OCSF severity_id
+            # severity_id 0: Unknown, 1: Informational, 2: Low, 3: Medium, 4: High, 5: Critical, 6: Fatal, 99: Other
             severity_map = {
+                # severity_id 0: Unknown - for truly unknown severities
+                "unknown": 0,
+                # severity_id 1: Informational - trace, info, informational (no action needed)
                 "trace": 1,
-                "debug": 1,
                 "informational": 1,
-                "info": 1,
+                "info": 1,  # Common short form
+                # severity_id 2: Low - debug level (developer information)
+                "debug": 2,
                 "notice": 2,
                 "low": 2,
+                # severity_id 3: Medium - warnings that need attention but not urgent
                 "warn": 3,
                 "warning": 3,
                 "medium": 3,
+                # severity_id 4: High - error conditions that require action
                 "error": 4,
                 "err": 4,
                 "high": 4,
+                # severity_id 5: Critical - critical conditions requiring immediate action
                 "critical": 5,
                 "crit": 5,
                 "alert": 5,
+                # severity_id 6: Fatal - fatal errors, too late to recover
                 "fatal": 6,
                 "emergency": 6,
+                # severity_id 99: Other - severity is not mapped to standard levels
+                "other": 99,
             }
+
+            # Normalize severity string to lowercase for case-insensitive matching
             severity = raw_log.get("severity", "informational").lower()
-            severity_id = severity_map.get(severity, 1)
+            severity_id = severity_map.get(severity, 1)  # Default to Informational (1)
 
             # Build OCSF structure
             ocsf = {

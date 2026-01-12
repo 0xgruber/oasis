@@ -82,7 +82,9 @@ export interface LogEntry {
   class_uid: number;
   message?: string;
   raw_log: string;
-  ocsf: Record<string, unknown>;
+  ocsf: Record<string, unknown> & {
+    severity?: string;  // Original severity string from log source
+  };
   ingested_at: number;
 }
 

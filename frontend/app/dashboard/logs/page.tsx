@@ -6,18 +6,20 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { logsApi, LogEntry } from '@/lib/api';
 import { format } from 'date-fns';
 
-const SEVERITY_MAP: Record<number, { 
-  label: string; 
-  color: string; 
+const SEVERITY_MAP: Record<number, {
+  label: string;
+  color: string;
   cyberColor: string;
   cyberGlow: string;
 }> = {
-  1: { label: 'Debug', color: 'text-slate-400', cyberColor: '#00d4ff', cyberGlow: '0 0 10px #00d4ff' },
-  2: { label: 'Info', color: 'text-blue-400', cyberColor: '#00d4ff', cyberGlow: '0 0 10px #00d4ff' },
-  3: { label: 'Warning', color: 'text-yellow-400', cyberColor: '#ffff00', cyberGlow: '0 0 10px #ffff00' },
-  4: { label: 'Error', color: 'text-red-400', cyberColor: '#ff0055', cyberGlow: '0 0 10px #ff0055' },
-  5: { label: 'Critical', color: 'text-red-600', cyberColor: '#ff00ff', cyberGlow: '0 0 10px #ff00ff' },
-  6: { label: 'Fatal', color: 'text-red-800', cyberColor: '#ff00ff', cyberGlow: '0 0 15px #ff00ff' },
+  0: { label: 'Unknown', color: 'text-gray-400', cyberColor: '#9ca3af', cyberGlow: '0 0 10px #9ca3af' },
+  1: { label: 'Informational', color: 'text-slate-400', cyberColor: '#94a3b8', cyberGlow: '0 0 10px #94a3b8' },
+  2: { label: 'Low', color: 'text-blue-400', cyberColor: '#60a5fa', cyberGlow: '0 0 10px #60a5fa' },
+  3: { label: 'Medium', color: 'text-yellow-400', cyberColor: '#fbbf24', cyberGlow: '0 0 10px #fbbf24' },
+  4: { label: 'High', color: 'text-orange-400', cyberColor: '#fb923c', cyberGlow: '0 0 12px #fb923c' },
+  5: { label: 'Critical', color: 'text-red-500', cyberColor: '#ef4444', cyberGlow: '0 0 15px #ef4444' },
+  6: { label: 'Fatal', color: 'text-red-700', cyberColor: '#b91c1c', cyberGlow: '0 0 20px #b91c1c' },
+  99: { label: 'Other', color: 'text-purple-400', cyberColor: '#a855f7', cyberGlow: '0 0 10px #a855f7' },
 };
 
 export default function LogsPage() {
@@ -374,13 +376,13 @@ export default function LogsPage() {
                   </p>
                 </div>
                 <div>
-                  <label 
+                  <label
                     className="text-sm font-medium"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     Severity
                   </label>
-                  <p 
+                  <p
                     className={`mt-1 ${theme === 'cyber' ? '' : SEVERITY_MAP[selectedLog.severity_id]?.color || 'text-slate-300'}`}
                     style={theme === 'cyber' ? {
                       color: SEVERITY_MAP[selectedLog.severity_id]?.cyberColor || '#00d4ff',
@@ -388,6 +390,11 @@ export default function LogsPage() {
                     } : undefined}
                   >
                     {SEVERITY_MAP[selectedLog.severity_id]?.label || 'Unknown'}
+                    {selectedLog.ocsf?.severity && (
+                      <span style={{ color: 'var(--text-secondary)' }}>
+                        {' '}(original: {String(selectedLog.ocsf.severity)})
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div>
