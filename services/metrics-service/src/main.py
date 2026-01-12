@@ -17,6 +17,7 @@ from .metrics import (
     get_tenant_metrics,
     get_agent_metrics,
     get_agents_list,
+    get_agent_by_id,
     get_agent_status_breakdown,
 )
 
@@ -208,46 +209,113 @@ async def clear_tenant_cache(tenant_id: str):
 
 
 @app.get("/metrics/agents")
-async def list_agents(tenant_id: Optional[str] = None):
+async def list_agents(
+    tenant_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
     """
-    List all agents with computed status
+    List all agents with computed status (with pagination and filtering)
 
     Query Parameters:
         tenant_id: Optional tenant UUID filter
+        status: Optional status filter (online, offline, dead, unknown)
+        limit: Maximum number of results (default: 100, max: 1000)
+        offset: Number of results to skip (default: 0)
 
     Returns:
-        List of agents with the following fields:
-        - agent_id: Agent UUID
-        - hostname: Agent hostname
-        - tenant_id: Tenant UUID
-        - last_seen: Last heartbeat timestamp (ISO format)
-        - status: Computed status (online/offline/dead/unknown)
-        - os_type: Operating system type
-        - os_version: Operating system version
-        - agent_type: Agent type (fluent-bit, etc.)
+        Object with:
+        - agents: List of agent objects
+        - total: Total count (before pagination)
+        - limit: Requested limit
+        - offset: Requested offset
 
     Example:
-        [
-            {
-                "agent_id": "660e8400-e29b-41d4-a716-446655440000",
-                "hostname": "web-01",
-                "tenant_id": "550e8400-e29b-41d4-a716-446655440000",
-                "last_seen": "2026-01-11T22:30:00+00:00",
-                "status": "online",
-                "os_type": "Linux",
-                "os_version": "Ubuntu 24.04",
-                "agent_type": "fluent-bit"
-            }
-        ]
+        {
+            "agents": [...],
+            "total": 25,
+            "limit": 100,
+            "offset": 0
+        }
     """
+    # Validate limit
+    if limit > 1000:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit cannot exceed 1000",
+        )
+
+    if limit < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Limit must be at least 1",
+        )
+
+    # Validate status filter
+    valid_statuses = ["online", "offline", "dead", "unknown"]
+    if status and status not in valid_statuses:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}",
+        )
+
     try:
-        agents = await get_agents_list(tenant_id)
-        return agents
+        result = await get_agents_list(
+            tenant_id=tenant_id, status_filter=status, limit=limit, offset=offset
+        )
+        return result
     except Exception as e:
-        logger.error("list_agents_endpoint_failed", tenant_id=tenant_id, error=str(e))
+        logger.error(
+            "list_agents_endpoint_failed", tenant_id=tenant_id, status=status, error=str(e)
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch agents list: {str(e)}",
+        )
+
+
+@app.get("/metrics/agents/{agent_id}")
+async def get_agent(agent_id: str):
+    """
+    Get a single agent by ID with computed status
+
+    Path Parameters:
+        agent_id: Agent UUID
+
+    Returns:
+        Agent object with all fields including created_at and updated_at
+
+    Example:
+        {
+            "agent_id": "660e8400-e29b-41d4-a716-446655440000",
+            "hostname": "web-01",
+            "tenant_id": "550e8400-e29b-41d4-a716-446655440000",
+            "last_seen": "2026-01-11T22:30:00+00:00",
+            "status": "online",
+            "os_type": "Linux",
+            "os_version": "Ubuntu 24.04",
+            "agent_type": "fluent-bit",
+            "is_active": true,
+            "created_at": "2026-01-10T10:00:00+00:00",
+            "updated_at": "2026-01-11T22:30:00+00:00"
+        }
+    """
+    try:
+        agent = await get_agent_by_id(agent_id)
+        if not agent:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Agent {agent_id} not found",
+            )
+        return agent
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_agent_endpoint_failed", agent_id=agent_id, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch agent: {str(e)}",
         )
 
 

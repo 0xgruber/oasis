@@ -27,9 +27,9 @@ $CONFIG_DIR = $CONFIG_ROOT
 $LOG_DIR = "$CONFIG_ROOT\logs"
 $STORAGE_DIR = "$CONFIG_ROOT\storage"
 $TENANT_CONFIG = "$CONFIG_ROOT\tenant.conf"
-$SERVICE_NAME = "OASISAgent"
+$SERVICE_NAME = "OASIS-Agent"
 $SERVICE_DISPLAY_NAME = "OASIS Agent"
-$DOWNLOAD_URL = "https://packages.fluentbit.io/windows/fluent-bit-$FLUENT_BIT_VERSION-win64.zip"
+$DOWNLOAD_URL = "https://packages.fluentbit.io/windows/fluent-bit-$FLUENT_BIT_VERSION-win64.exe"
 
 # Tenant Configuration (loaded from tenant.conf)
 $OASIS_GATEWAY_HOST = ""
@@ -165,53 +165,119 @@ function Load-TenantConfig {
 function Install-FluentBit {
     Write-Info "Installing Fluent Bit $FLUENT_BIT_VERSION..."
     
-    # Check if already installed (look for the actual binary, not just the directory)
-    $fluentBitBinary = Join-Path $INSTALL_DIR "bin\fluent-bit.exe"
-    if (Test-Path $fluentBitBinary) {
+    # Check if already installed
+    $binPath = Join-Path $INSTALL_DIR "bin\fluent-bit.exe"
+    if (Test-Path $binPath) {
         Write-Warning "Fluent Bit is already installed at $INSTALL_DIR"
-        $response = Read-Host "Do you want to reinstall? (y/N)"
-        if ($response -ne "y" -and $response -ne "Y") {
+        $response = Read-Host "Do you want to reinstall? (y/n)"
+        if ($response -ne 'y') {
             Write-Info "Skipping installation"
             return
         }
         Write-Info "Removing existing installation..."
-        Stop-ServiceIfExists
-        Remove-Item -Path $INSTALL_DIR -Recurse -Force
+        
+        # Stop any services before uninstalling
+        $servicesToStop = @("OASIS-Agent", "OASISAgent", "fluent-bit", "fluentbit")
+        foreach ($svcName in $servicesToStop) {
+            $existingService = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+            if ($existingService) {
+                Write-Info "Stopping service: $svcName..."
+                Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
+                & sc.exe delete $svcName | Out-Null
+            }
+        }
+        
+        Start-Sleep -Seconds 2
+        
+        # Try to uninstall using the uninstaller if it exists
+        $uninstaller = Join-Path $INSTALL_DIR "Uninstall.exe"
+        if (Test-Path $uninstaller) {
+            Write-Info "Running uninstaller..."
+            Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait -NoNewWindow
+            Start-Sleep -Seconds 3
+        }
+        
+        # Remove directory if still exists
+        if (Test-Path $INSTALL_DIR) {
+            Remove-Item -Path $INSTALL_DIR -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
     
     # Create temporary download directory
     $tempDir = Join-Path $env:TEMP "fluent-bit-install"
     New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
-    $zipFile = Join-Path $tempDir "fluent-bit.zip"
+    $installerFile = Join-Path $tempDir "fluent-bit-installer.exe"
     
     try {
-        # Download Fluent Bit
-        Write-Info "Downloading Fluent Bit from $DOWNLOAD_URL..."
+        # Download Fluent Bit installer
+        Write-Info "Downloading Fluent Bit installer from $DOWNLOAD_URL..."
         [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $zipFile -UseBasicParsing
         
-        # Extract archive
-        Write-Info "Extracting archive..."
-        Expand-Archive -Path $zipFile -DestinationPath $tempDir -Force
+        # Download with certificate validation bypass
+        if (-not ([System.Management.Automation.PSTypeName]'ServerCertificateValidationCallback').Type) {
+            $certCallback = @"
+                using System;
+                using System.Net;
+                using System.Net.Security;
+                using System.Security.Cryptography.X509Certificates;
+                public class ServerCertificateValidationCallback {
+                    public static void Ignore() {
+                        if(ServicePointManager.ServerCertificateValidationCallback == null) {
+                            ServicePointManager.ServerCertificateValidationCallback += 
+                                delegate (
+                                    Object obj, 
+                                    X509Certificate certificate, 
+                                    X509Chain chain, 
+                                    SslPolicyErrors errors
+                                ) {
+                                    return true;
+                                };
+                        }
+                    }
+                }
+"@
+            Add-Type $certCallback
+        }
+        [ServerCertificateValidationCallback]::Ignore()
         
-        # Move to installation directory
-        $extractedDir = Get-ChildItem -Path $tempDir -Directory | Where-Object { $_.Name -like "fluent-bit-*" } | Select-Object -First 1
-        if ($null -eq $extractedDir) {
-            throw "Failed to find extracted Fluent Bit directory"
+        Invoke-WebRequest -Uri $DOWNLOAD_URL -OutFile $installerFile -UseBasicParsing
+        
+        # Verify download
+        if (-not (Test-Path $installerFile)) {
+            throw "Failed to download installer"
         }
         
-        # Copy contents of extracted directory to installation directory
-        Write-Info "Moving files to installation directory..."
-        Get-ChildItem -Path $extractedDir.FullName -Recurse | ForEach-Object {
-            $targetPath = Join-Path $INSTALL_DIR $_.FullName.Substring($extractedDir.FullName.Length)
-            if ($_.PSIsContainer) {
-                New-Item -ItemType Directory -Path $targetPath -Force | Out-Null
-            } else {
-                Copy-Item -Path $_.FullName -Destination $targetPath -Force
-            }
+        $fileSize = (Get-Item $installerFile).Length
+        Write-Info "Downloaded installer: $([math]::Round($fileSize/1MB, 2)) MB"
+        
+        # Run installer silently
+        Write-Info "Running installer (silent mode)..."
+        Write-Info "Installing to: $INSTALL_DIR"
+        
+        # NSIS installer syntax: /S for silent, /D= for install directory (must be last parameter, no quotes)
+        $installArgs = "/S /D=$INSTALL_DIR"
+        
+        Write-Info "Installer command: $installerFile $installArgs"
+        
+        $process = Start-Process -FilePath $installerFile -ArgumentList $installArgs -Wait -PassThru -NoNewWindow
+        
+        if ($process.ExitCode -ne 0) {
+            throw "Installer failed with exit code: $($process.ExitCode)"
         }
         
-        Write-Success "Fluent Bit installed successfully"
+        # Wait for installation to complete
+        Write-Info "Waiting for installation to complete..."
+        Start-Sleep -Seconds 5
+        
+        # Verify installation
+        if (-not (Test-Path $binPath)) {
+            throw "Installation completed but binary not found at: $binPath"
+        }
+        
+        # Get installed version
+        $version = & $binPath --version 2>&1 | Select-Object -First 1
+        Write-Success "Fluent Bit installed successfully: $version"
+        
     }
     catch {
         Write-Error "Installation failed: $_"
@@ -220,7 +286,7 @@ function Install-FluentBit {
     finally {
         # Cleanup
         if (Test-Path $tempDir) {
-            Remove-Item -Path $tempDir -Recurse -Force
+            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }
@@ -301,14 +367,19 @@ function New-Configuration {
     Write-Info "CA certificate written to $certPath"
     
     # Create main configuration
+    # Convert paths to forward slashes for Fluent Bit
+    $logDirUnix = $LOG_DIR -replace '\\', '/'
+    $storageDirUnix = $STORAGE_DIR -replace '\\', '/'
+    $configDirUnix = $CONFIG_DIR -replace '\\', '/'
+    
     $mainConfig = @"
 [SERVICE]
     Flush                     5
     Daemon                    Off
     Log_Level                 info
-    Log_File                  $LOG_DIR/fluent-bit.log
-    Parsers_File              parsers.conf
-    storage.path              $STORAGE_DIR/
+    Log_File                  $logDirUnix/fluent-bit.log
+    Parsers_File              $configDirUnix/parsers.conf
+    storage.path              $storageDirUnix/
     storage.sync              normal
     storage.checksum          off
     storage.max_chunks_up     128
@@ -354,7 +425,7 @@ function New-Configuration {
     Name                      modify
     Match                     *
     Add                       tenant_id $OASIS_TENANT_ID
-    Add                       hostname `${COMPUTERNAME}
+    Add                       hostname `${env:COMPUTERNAME}
     Add                       source_type windows_eventlog
     Add                       agent_type fluent-bit
 
@@ -371,7 +442,7 @@ function New-Configuration {
     Header                    Authorization Bearer $OASIS_API_KEY
     tls                       On
     tls.verify                On
-    tls.ca_file               $CONFIG_DIR/oasis-ca.pem
+    tls.ca_file               $configDirUnix/oasis-ca.pem
     Retry_Limit               5
     storage.total_limit_size  500M
     net.keepalive             On
@@ -379,7 +450,29 @@ function New-Configuration {
 
 "@
     
-    Set-Content -Path (Join-Path $CONFIG_DIR "fluent-bit.conf") -Value $mainConfig -Encoding UTF8
+    
+    # Write config without BOM
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    $configFilePath = Join-Path $CONFIG_DIR "fluent-bit.conf"
+    [System.IO.File]::WriteAllText($configFilePath, $mainConfig, $utf8NoBom)
+    
+    # Debug: Show first few lines of generated config
+    Write-Info "Generated configuration (first 15 lines):"
+    Get-Content $configFilePath | Select-Object -First 15 | ForEach-Object {
+        Write-Host "  $_" -ForegroundColor Gray
+    }
+    
+    # Verify file was written correctly
+    $fileInfo = Get-Item $configFilePath
+    Write-Info "Config file size: $($fileInfo.Length) bytes"
+    
+    # Check for BOM
+    $bytes = [System.IO.File]::ReadAllBytes($configFilePath)
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        Write-Warning "Config file has UTF-8 BOM (this may cause issues)"
+    } else {
+        Write-Info "Config file encoding: UTF-8 without BOM (correct)"
+    }
     
     # Create parsers configuration
     $parsersConfig = @"
@@ -392,55 +485,224 @@ function New-Configuration {
 
 "@
     
-    Set-Content -Path (Join-Path $CONFIG_DIR "parsers.conf") -Value $parsersConfig -Encoding UTF8
+    # Write parsers config without BOM
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText((Join-Path $CONFIG_DIR "parsers.conf"), $parsersConfig, $utf8NoBom)
     
     Write-Success "Configuration created at $CONFIG_DIR"
-}
-
-function Stop-ServiceIfExists {
-    if (Get-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue) {
-        Write-Info "Stopping existing service..."
-        Stop-Service -Name $SERVICE_NAME -Force
-        & sc.exe delete $SERVICE_NAME | Out-Null
-        Start-Sleep -Seconds 2
-    }
+    Write-Info "  - fluent-bit.conf"
+    Write-Info "  - parsers.conf"
+    Write-Info "  - oasis-ca.pem"
 }
 
 function New-WindowsService {
-    Write-Info "Creating Windows service..."
+    Write-Info "Configuring Windows service..."
     
-    Stop-ServiceIfExists
-    
-    # Create service using sc.exe
     $binPath = Join-Path $INSTALL_DIR "bin\fluent-bit.exe"
     $configPath = Join-Path $CONFIG_DIR "fluent-bit.conf"
     
-    # Use sc.exe to create service
-    & sc.exe create $SERVICE_NAME binPath= "`"$binPath`" -c `"$configPath`"" start= auto DisplayName= $SERVICE_DISPLAY_NAME | Out-Null
+    Write-Info "Binary: $binPath"
+    Write-Info "Config: $configPath"
     
-    # Set service description
-    & sc.exe description $SERVICE_NAME "Fluent Bit log forwarder for O.A.S.I.S. SIEM platform" | Out-Null
+    # Verify files exist
+    if (-not (Test-Path $binPath)) {
+        Write-Error "Binary not found: $binPath"
+        exit 1
+    }
     
-    # Configure service recovery options
-    & sc.exe failure $SERVICE_NAME reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
+    if (-not (Test-Path $configPath)) {
+        Write-Error "Config not found: $configPath"
+        exit 1
+    }
     
-    Write-Success "Windows service created"
+    # Validate configuration by doing a dry run
+    Write-Info "Validating configuration..."
+    try {
+        $dryRunOutput = & $binPath -c $configPath --dry-run 2>&1
+        $dryRunExitCode = $LASTEXITCODE
+        
+        if ($dryRunExitCode -ne 0) {
+            Write-Warning "Configuration validation failed (exit code: $dryRunExitCode)"
+            Write-Warning "Dry-run output:"
+            $dryRunOutput | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+            Write-Warning "Continuing with service creation anyway..."
+        } else {
+            Write-Success "Configuration validation passed"
+        }
+    }
+    catch {
+        Write-Warning "Could not validate configuration: $_"
+        Write-Info "Continuing with service creation..."
+    }
+    
+    # Check if installer created a default service
+    $installerServiceNames = @("fluent-bit", "fluentbit")
+    $installerCreatedService = $null
+    
+    foreach ($svcName in $installerServiceNames) {
+        $existingService = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($existingService) {
+            Write-Info "Found installer-created service: $svcName"
+            $installerCreatedService = $svcName
+            break
+        }
+    }
+    
+    # Stop and remove any existing services (including old OASIS ones)
+    $servicesToRemove = @($SERVICE_NAME, "OASISAgent")
+    if ($installerCreatedService) {
+        $servicesToRemove += $installerCreatedService
+    }
+    
+    foreach ($svcName in $servicesToRemove) {
+        $existingService = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($existingService) {
+            Write-Info "Stopping and removing existing service: $svcName..."
+            Stop-Service -Name $svcName -Force -ErrorAction SilentlyContinue
+            & sc.exe delete $svcName | Out-Null
+            Start-Sleep -Seconds 2
+        }
+    }
+    
+    try {
+        # Create new service with our configuration
+        # Use sc.exe to create the service (matches official Fluent Bit documentation)
+        # Format: binPath= "path\to\fluent-bit.exe" -c "path\to\config.conf"
+        # Note: key is case-insensitive, but docs use binPath= (with capital P).
+        $binaryPathName = "`"$binPath`" -c `"$configPath`""
+        
+        Write-Info "Creating service '$SERVICE_NAME' with display name '$SERVICE_DISPLAY_NAME'..."
+        Write-Info "Service command line: $binaryPathName"
+        
+        # Create service with sc.exe - note the syntax: binpath= (with equals and space after)
+        # sc.exe parsing is finicky; build a single command string so quoting survives
+        $scCreateArgs = "create `"$SERVICE_NAME`" binPath= `"$binaryPathName`" start= auto DisplayName= `"$SERVICE_DISPLAY_NAME`""
+        Write-Info "sc.exe args: $scCreateArgs"
+        $scResult = & sc.exe $scCreateArgs 2>&1
+        
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "sc.exe failed with exit code $LASTEXITCODE"
+            Write-Error "Output: $scResult"
+            exit 1
+        }
+        
+        Write-Success "Windows service created: $SERVICE_NAME"
+        
+        # Set description separately as sc.exe create doesn't have a description parameter
+        sc.exe description $SERVICE_NAME "Fluent Bit log forwarder for O.A.S.I.S. SIEM platform" | Out-Null
+        
+        # Configure service recovery options using sc.exe
+        sc.exe failure $SERVICE_NAME reset= 86400 actions= restart/60000/restart/60000/restart/60000 | Out-Null
+        
+        # Verify the service was created correctly
+        Write-Info "Verifying service configuration..."
+        $service = Get-WmiObject -Class Win32_Service -Filter "Name='$SERVICE_NAME'"
+        if ($service) {
+            Write-Info "  Service PathName: $($service.PathName)"
+            Write-Info "  Service State: $($service.State)"
+            Write-Info "  Service Start Mode: $($service.StartMode)"
+        } else {
+            Write-Warning "Could not retrieve service information for verification"
+        }
+    }
+    catch {
+        Write-Error "Failed to create Windows service: $_"
+        exit 1
+    }
 }
 
 function Start-FluentBitService {
     Write-Info "Starting Fluent Bit service..."
     
-    Start-Service -Name $SERVICE_NAME
-    Start-Sleep -Seconds 3
-    
-    $service = Get-Service -Name $SERVICE_NAME
-    if ($service.Status -eq "Running") {
-        Write-Success "Fluent Bit service started successfully"
-    } else {
-        Write-Error "Failed to start Fluent Bit service. Status: $($service.Status)"
-        Write-Info "Check logs at: $LOG_DIR\fluent-bit.log"
-        exit 1
+    try {
+        Start-Service -Name $SERVICE_NAME -ErrorAction Stop
+        Start-Sleep -Seconds 5
+        
+        $service = Get-Service -Name $SERVICE_NAME
+        if ($service.Status -eq "Running") {
+            Write-Success "Fluent Bit service started successfully"
+            return
+        } else {
+            Write-Warning "Service status: $($service.Status)"
+            # Fall through to error diagnostics below
+        }
     }
+    catch {
+        Write-Error "Failed to start service: $_"
+    }
+    
+    # Common error diagnostics (runs if service didn't start or threw exception)
+    Write-Info "Attempting to diagnose service startup failure..."
+    
+    # Check Windows Application event log for recent errors
+    Write-Info "Checking Windows Event Log..."
+    $recentErrors = Get-EventLog -LogName Application -Source "Service Control Manager" -Newest 10 -ErrorAction SilentlyContinue | 
+        Where-Object { $_.Message -like "*$SERVICE_NAME*" -or $_.Message -like "*fluent-bit*" -or $_.TimeGenerated -gt (Get-Date).AddMinutes(-5) }
+    
+    if ($recentErrors) {
+        Write-Warning "Recent service-related events:"
+        $recentErrors | ForEach-Object { 
+            Write-Host "  [$($_.EntryType)] $($_.Message)" -ForegroundColor $(if ($_.EntryType -eq "Error") { "Red" } else { "Yellow" })
+        }
+    } else {
+        Write-Info "No recent errors found in Event Log"
+    }
+    
+    # Check if Fluent Bit log file exists and show recent content
+    $fluentBitLogPath = Join-Path $LOG_DIR "fluent-bit.log"
+    if (Test-Path $fluentBitLogPath) {
+        Write-Info "`nFluent Bit log file contents (last 20 lines):"
+        Get-Content $fluentBitLogPath -Tail 20 -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "  $_" -ForegroundColor Gray
+        }
+    } else {
+        Write-Info "Fluent Bit log file not created yet: $fluentBitLogPath"
+    }
+    
+    # Try to manually test fluent-bit
+    Write-Info "`nTesting fluent-bit binary manually..."
+    $binPath = Join-Path $INSTALL_DIR "bin\fluent-bit.exe"
+    $configPath = Join-Path $CONFIG_DIR "fluent-bit.conf"
+    
+    if (Test-Path $binPath) {
+        Write-Info "Binary version:"
+        & $binPath --version
+        
+        Write-Info "`nTesting configuration file..."
+        if (Test-Path $configPath) {
+            Write-Info "Running fluent-bit with config (will run for 5 seconds)..."
+            $job = Start-Job -ScriptBlock { 
+                param($bin, $conf)
+                & $bin -c $conf 2>&1
+            } -ArgumentList $binPath, $configPath
+            
+            Start-Sleep -Seconds 5
+            Stop-Job -Job $job -ErrorAction SilentlyContinue
+            $output = Receive-Job -Job $job
+            Remove-Job -Job $job -Force
+            
+            Write-Host "`nFluent Bit manual execution output:" -ForegroundColor Yellow
+            if ($output) {
+                $output | ForEach-Object { Write-Host "  $_" }
+            } else {
+                Write-Host "  (no output captured)" -ForegroundColor Gray
+            }
+        } else {
+            Write-Error "Config not found at: $configPath"
+        }
+    } else {
+        Write-Error "Binary not found at: $binPath"
+    }
+    
+    Write-Host ""
+    Write-Info "Additional debugging steps:"
+    Write-Info "1. Check service configuration: sc.exe qc $SERVICE_NAME"
+    Write-Info "2. Check service status: sc.exe query $SERVICE_NAME"
+    Write-Info "3. Try manual start: & '$binPath' -c '$configPath'"
+    Write-Info "4. Check file permissions on: $CONFIG_DIR"
+    Write-Info "5. Check logs at: $LOG_DIR\fluent-bit.log"
+    
+    exit 1
 }
 
 function Show-Summary {

@@ -13,6 +13,7 @@ export default function AdminSidebar() {
   const navigation = [
     { name: 'Overview', href: '/admin', icon: '🏠', exact: true },
     { name: 'User Management', href: '/admin/users', icon: '👥' },
+    { name: 'Agent Management', href: '/admin/agents', icon: '📡' },
     { name: 'System Settings', href: '/admin/settings', icon: '⚙️' },
   ];
 

@@ -126,6 +126,7 @@ See [IMPROVEMENTS.md](IMPROVEMENTS.md) - Dynamic Service Status Monitoring secti
 - [x] Multi-tenant isolation verified (per-tenant ClickHouse tables)
 - [x] End-to-end log ingestion tested (VM → Gateway → ClickHouse)
 - [x] Agent heartbeat tracking (updates `last_seen_at` on ingestion)
+- [x] Phase 2B groundwork started: agent status endpoints + Admin Agents page
 
 ### 🔄 Phase 2: Customer Portal & RBAC
 **Status:** In Progress (Phase 2B - Next)  
@@ -205,7 +206,8 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 ---
 
 #### Phase 2B: Agent Management & Monitoring
-**Status:** Pending  
+**Status:** In Progress  
+**Started:** 2026-01-11  
 **Estimated Duration:** 2-3 weeks
 
 **Goals:**
@@ -215,12 +217,12 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - Agent management UIs across all portals
 
 **Completion Criteria:**
-- [ ] Agent heartbeat: Update `last_seen_at` on log ingestion
-- [ ] Dynamic status calculation: online (<480m), offline (480m-30d), dead (>30d)
-- [ ] Database: `tenant_settings` table (per-tenant threshold overrides)
-- [ ] API: `GET /api/agents` (with status, filters, pagination)
-- [ ] API: `GET /api/agents/:id` (agent details)
-- [ ] Admin Portal: Agent management UI (list, edit, delete)
+- [x] Agent heartbeat: Update `last_seen_at` on log ingestion
+- [x] Dynamic status calculation: online (<480m), offline (480m-30d), dead (>30d)
+- [x] Database: `tenant_settings` table (per-tenant threshold overrides)
+- [x] API: `GET /api/agents` (with status, filters, pagination)
+- [x] API: `GET /api/agents/:id` (agent details)
+- [~] Admin Portal: Agent management UI (list, edit, delete)
 - [ ] S.O.C.A.P.: Global agent dashboard (all tenants, status breakdown)
 - [ ] Customer Portal: Agent view (tenant-isolated, download config)
 - [ ] Config download: Generate fresh API key on `tenant.conf` download

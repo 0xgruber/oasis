@@ -359,15 +359,21 @@ async def get_system_metrics(current_user: dict = Depends(get_current_user)):
 @app.get("/agents")
 async def list_agents(
     tenant_id: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
     current_user: dict = Depends(get_current_user),
 ):
     """
-    List all agents with computed status
+    List all agents with computed status (with pagination and filtering)
 
     Proxies to metrics service
 
     Query Parameters:
         tenant_id: Optional tenant UUID filter
+        status: Optional status filter (online, offline, dead, unknown)
+        limit: Maximum number of results (default: 100, max: 1000)
+        offset: Number of results to skip (default: 0)
 
     Accessible by platform admins and SOC analysts
     """
@@ -380,9 +386,14 @@ async def list_agents(
 
     try:
         # Build query params
-        params = {}
+        params = {
+            "limit": limit,
+            "offset": offset,
+        }
         if tenant_id:
             params["tenant_id"] = tenant_id
+        if status:
+            params["status"] = status
 
         # Proxy to metrics service
         async with httpx.AsyncClient() as client:
@@ -410,6 +421,62 @@ async def list_agents(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to fetch agents list: {str(e)}",
+        )
+
+
+@app.get("/agents/{agent_id}")
+async def get_agent(
+    agent_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get a single agent by ID with computed status
+
+    Proxies to metrics service
+
+    Path Parameters:
+        agent_id: Agent UUID
+
+    Accessible by platform admins and SOC analysts
+    """
+    # Allow both platform admins and SOC analysts
+    if current_user["credential_type"] not in ["platform_admin", "soc_analyst"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators and SOC analysts can access agent information",
+        )
+
+    try:
+        # Proxy to metrics service
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{settings.METRICS_SERVICE_URL}/metrics/agents/{agent_id}",
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Agent {agent_id} not found",
+            )
+        logger.error("agent_get_http_error", status_code=e.response.status_code, error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Metrics service error: {e.response.status_code}",
+        )
+    except httpx.RequestError as e:
+        logger.error("agent_get_connection_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to connect to metrics service",
+        )
+    except Exception as e:
+        logger.error("agent_get_proxy_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch agent: {str(e)}",
         )
 
 

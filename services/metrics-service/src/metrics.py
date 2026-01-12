@@ -433,23 +433,33 @@ async def get_agent_metrics(agent_id: str) -> Dict[str, Any]:
         raise
 
 
-async def get_agents_list(tenant_id: str | None = None) -> list[Dict[str, Any]]:
+async def get_agents_list(
+    tenant_id: str | None = None,
+    status_filter: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> Dict[str, Any]:
     """
     Get list of all agents with computed status
 
     Args:
         tenant_id: Optional tenant filter
+        status_filter: Optional status filter (online, offline, dead, unknown)
+        limit: Maximum number of results (default: 100)
+        offset: Number of results to skip (default: 0)
 
     Returns:
-        List of agent dictionaries with status
+        Dictionary with agents list, total count, limit, and offset
     """
-    # Build cache key
-    cache_key = f"metrics:agents:tenant:{tenant_id}" if tenant_id else "metrics:agents:all"
+    # For pagination and filtering, we can't rely on simple cache
+    # We'll fetch all agents, apply filters, then paginate
+    # Cache key includes filter params
+    cache_key = f"metrics:agents:tenant:{tenant_id}:status:{status_filter}:lim:{limit}:off:{offset}"
 
     # Check cache first
     cached = await cache.get(cache_key)
     if cached is not None:
-        logger.debug("agents_list_cache_hit", tenant_id=tenant_id)
+        logger.debug("agents_list_cache_hit", tenant_id=tenant_id, status_filter=status_filter)
         return cached
 
     agents = []
@@ -477,7 +487,7 @@ async def get_agents_list(tenant_id: str | None = None) -> list[Dict[str, Any]]:
                     query += " AND tenant_id = $1"
                     params.append(tenant_id)
 
-                query += " ORDER BY last_seen DESC"
+                query += " ORDER BY last_seen DESC NULLS LAST, hostname ASC"
 
                 rows = await conn.fetch(query, *params)
 
@@ -500,6 +510,10 @@ async def get_agents_list(tenant_id: str | None = None) -> list[Dict[str, Any]]:
                         thresholds["dead_minutes"],
                     )
 
+                    # Apply status filter if provided
+                    if status_filter and status != status_filter:
+                        continue
+
                     agents.append(
                         {
                             "agent_id": str(row["agent_id"]),
@@ -513,14 +527,114 @@ async def get_agents_list(tenant_id: str | None = None) -> list[Dict[str, Any]]:
                         }
                     )
 
-        # Cache the result
-        await cache.set(cache_key, agents, settings.CACHE_TTL_AGENT_LIST)
-        logger.info("agents_list_calculated", count=len(agents), tenant_id=tenant_id)
+        # Get total count before pagination
+        total = len(agents)
 
-        return agents
+        # Apply pagination
+        paginated_agents = agents[offset : offset + limit]
+
+        result = {
+            "agents": paginated_agents,
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+        }
+
+        # Cache the result (short TTL for paginated results)
+        await cache.set(cache_key, result, settings.CACHE_TTL_AGENT_LIST)
+        logger.info(
+            "agents_list_calculated",
+            count=len(paginated_agents),
+            total=total,
+            tenant_id=tenant_id,
+            status_filter=status_filter,
+        )
+
+        return result
 
     except Exception as e:
         logger.error("agents_list_calculation_failed", tenant_id=tenant_id, error=str(e))
+        raise
+
+
+async def get_agent_by_id(agent_id: str) -> Dict[str, Any] | None:
+    """
+    Get a single agent by ID with computed status
+
+    Args:
+        agent_id: Agent UUID
+
+    Returns:
+        Agent dictionary or None if not found
+    """
+    # Check cache first
+    cache_key = f"metrics:agent:detail:{agent_id}"
+    cached = await cache.get(cache_key)
+    if cached is not None:
+        logger.debug("agent_detail_cache_hit", agent_id=agent_id)
+        return cached
+
+    try:
+        if pg_pool:
+            async with pg_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT 
+                        id as agent_id,
+                        hostname,
+                        tenant_id,
+                        last_seen,
+                        os_type,
+                        os_version,
+                        agent_type,
+                        is_active,
+                        created_at,
+                        updated_at
+                    FROM agents
+                    WHERE id = $1
+                    """,
+                    agent_id,
+                )
+
+                if not row:
+                    return None
+
+                tid = str(row["tenant_id"])
+
+                # Get thresholds for this tenant
+                thresholds = await get_tenant_thresholds(tid)
+
+                # Calculate status
+                status = calculate_agent_status(
+                    row["last_seen"],
+                    thresholds["offline_minutes"],
+                    thresholds["dead_minutes"],
+                )
+
+                agent = {
+                    "agent_id": str(row["agent_id"]),
+                    "hostname": row["hostname"],
+                    "tenant_id": tid,
+                    "last_seen": row["last_seen"].isoformat() if row["last_seen"] else None,
+                    "status": status,
+                    "os_type": row["os_type"],
+                    "os_version": row["os_version"],
+                    "agent_type": row["agent_type"],
+                    "is_active": row["is_active"],
+                    "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+                    "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+                }
+
+                # Cache the result
+                await cache.set(cache_key, agent, settings.CACHE_TTL_AGENT_METRICS)
+                logger.info("agent_detail_fetched", agent_id=agent_id)
+
+                return agent
+
+        return None
+
+    except Exception as e:
+        logger.error("agent_detail_fetch_failed", agent_id=agent_id, error=str(e))
         raise
 
 
@@ -554,8 +668,9 @@ async def get_agent_status_breakdown(tenant_id: str | None = None) -> Dict[str, 
     }
 
     try:
-        # Get agents list (uses its own cache)
-        agents = await get_agents_list(tenant_id)
+        # Get agents list (no pagination for breakdown)
+        result = await get_agents_list(tenant_id, limit=10000)
+        agents = result["agents"]
 
         # Count by status
         for agent in agents:

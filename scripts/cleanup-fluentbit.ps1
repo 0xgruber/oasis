@@ -16,7 +16,7 @@
 #Requires -RunAsAdministrator
 
 $ErrorActionPreference = "Stop"
-$SERVICE_NAME = "OASISAgent"
+$SERVICE_NAME = "OASIS-Agent"
 $INSTALL_DIR = "C:\Program Files\Oasis"
 $CONFIG_ROOT = "C:\ProgramData\Oasis"
 $CONFIG_DIR = $CONFIG_ROOT
@@ -44,19 +44,28 @@ function Write-Error {
 function Stop-FluentBitService {
     Write-Info "Stopping Fluent Bit service..."
     
-    $service = Get-Service -Name $SERVICE_NAME -ErrorAction SilentlyContinue
-    if ($null -ne $service) {
-        if ($service.Status -eq "Running") {
-            Stop-Service -Name $SERVICE_NAME -Force
-            Write-Success "Service stopped"
-        } else {
-            Write-Info "Service is not running"
+    # Check for all possible service names (current and legacy)
+    $serviceNames = @($SERVICE_NAME, "OASISAgent", "fluent-bit")
+    $serviceRemoved = $false
+    
+    foreach ($svcName in $serviceNames) {
+        $service = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($null -ne $service) {
+            if ($service.Status -eq "Running") {
+                Stop-Service -Name $svcName -Force
+                Write-Success "Service stopped: $svcName"
+            } else {
+                Write-Info "Service is not running: $svcName"
+            }
+            
+            # Delete service
+            & sc.exe delete $svcName | Out-Null
+            Write-Success "Service removed: $svcName"
+            $serviceRemoved = $true
         }
-        
-        # Delete service
-        & sc.exe delete $SERVICE_NAME | Out-Null
-        Write-Success "Service removed"
-    } else {
+    }
+    
+    if (-not $serviceRemoved) {
         Write-Info "Service not found"
     }
 }
