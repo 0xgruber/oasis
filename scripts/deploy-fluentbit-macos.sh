@@ -10,15 +10,16 @@
 # Prerequisites:
 #   - macOS 11.0 (Big Sur) or later
 #   - Homebrew installed
-#   - sudo access
+#   - sudo access (script will prompt for password when needed)
 #   - Network connectivity to O.A.S.I.S. Gateway
 #   - tenant.conf file (from O.A.S.I.S. Dashboard) in same directory as script
 #
 # Usage:
 #   # 1. Download tenant.conf from O.A.S.I.S. Dashboard
 #   # 2. Place tenant.conf in same directory as this script
-#   # 3. Run:
-#   sudo ./deploy-fluentbit-macos.sh
+#   # 3. Run: (NO sudo needed initially)
+#   ./deploy-fluentbit-macos.sh
+#   The script will prompt for sudo when needed for system-level operations.
 #
 ###############################################################################
 
@@ -74,9 +75,30 @@ log_debug() {
     echo -e "${GRAY}[DEBUG]${NC} $1"
 }
 
-check_root() {
+check_not_root() {
+    # Ensure script is NOT run as root initially
+    # Homebrew should run as regular user
+    if [[ $EUID -eq 0 ]]; then
+        log_warning "This script should NOT be run with sudo"
+        log_warning "Please run: ./deploy-fluentbit-macos.sh"
+        log_warning "The script will prompt for sudo when needed"
+        exit 1
+    fi
+}
+
+require_sudo() {
+    # Elevate to root privileges for system-level operations
+    # This function should be called before operations that need sudo
     if [[ $EUID -ne 0 ]]; then
-        log_error "This script must be run as root (use sudo)"
+        log_info "Elevating privileges for system operation..."
+        exec sudo "$0" "$@"
+    fi
+}
+
+check_root() {
+    # Verify we have root privileges (internal use by operations that need sudo)
+    if [[ $EUID -ne 0 ]]; then
+        log_error "This operation requires root privileges (should not happen)"
         exit 1
     fi
 }
@@ -120,8 +142,11 @@ check_homebrew() {
     log_success "Homebrew is installed"
 }
 
-setup_tenant_config() {
-    log_info "Setting up tenant configuration..."
+setup_system_tenant_config() {
+    # This function uses sudo inline for specific operations
+    # Script continues running as regular user
+    
+    log_info "Setting up system tenant configuration (requires sudo for /etc/oasis)..."
 
     # Check if tenant.conf exists in script directory
     local source_config="$SCRIPT_DIR/tenant.conf"
@@ -134,17 +159,25 @@ setup_tenant_config() {
         exit 1
     fi
 
-    # Create /etc/oasis directory if it doesn't exist
+    # Create /etc/oasis directory if it doesn't exist (requires sudo)
     if [ ! -d "/etc/oasis" ]; then
-        mkdir -p "/etc/oasis"
-        log_info "Created directory: /etc/oasis"
+        log_info "Creating /etc/oasis directory (requires sudo)..."
+        sudo mkdir -p "/etc/oasis" || {
+            log_error "Failed to create /etc/oasis directory"
+            log_error "Try running: sudo mkdir -p /etc/oasis"
+            exit 1
+        }
+        log_success "Created directory: /etc/oasis"
     fi
 
-    # Copy tenant.conf to /etc/oasis/
-    log_info "Copying tenant.conf to $TENANT_CONFIG..."
-    cp "$source_config" "$TENANT_CONFIG"
-    chmod 600 "$TENANT_CONFIG"
-    log_success "Tenant configuration copied"
+    # Copy tenant.conf to /etc/oasis/ (requires sudo)
+    log_info "Copying tenant.conf to $TENANT_CONFIG (requires sudo)..."
+    sudo cp "$source_config" "$TENANT_CONFIG" || {
+        log_error "Failed to copy tenant.conf"
+        exit 1
+    }
+    sudo chmod 600 "$TENANT_CONFIG"
+    log_success "Tenant configuration copied to system directory"
 
     # Read tenant.conf to extract certificate for later use
     OASIS_CA_CERT=$(awk '/-----BEGIN CERTIFICATE-----/, /-----END CERTIFICATE-----/' "$source_config")
@@ -156,13 +189,19 @@ setup_tenant_config() {
     fi
 }
 
+
 load_tenant_config() {
-    log_info "Loading tenant configuration from $TENANT_CONFIG..."
+    # Load tenant config from script directory (doesn't require sudo)
+    # setup_system_tenant_config() will copy it to /etc/oasis separately
     
-    if [ ! -f "$TENANT_CONFIG" ]; then
-        log_error "Tenant configuration file not found: $TENANT_CONFIG"
+    local source_config="$SCRIPT_DIR/tenant.conf"
+    
+    log_info "Loading tenant configuration from $source_config..."
+    
+    if [ ! -f "$source_config" ]; then
+        log_error "Tenant configuration file not found: $source_config"
         log_error ""
-        log_error "Please create $TENANT_CONFIG with the following content:"
+        log_error "Please create $source_config with the following content:"
         log_error ""
         log_error "OASIS_GATEWAY_HOST=your.gateway.host"
         log_error "OASIS_GATEWAY_PORT=8444"
@@ -186,21 +225,21 @@ load_tenant_config() {
         if [[ -n "$key" ]] && [[ -n "$value" ]]; then
             export "$key=$value"
         fi
-    done < "$TENANT_CONFIG"
+    done < "$source_config"
     
     # Validate required variables
     if [ -z "$OASIS_GATEWAY_HOST" ]; then
-        log_error "OASIS_GATEWAY_HOST not set in $TENANT_CONFIG"
+        log_error "OASIS_GATEWAY_HOST not set in tenant.conf"
         exit 1
     fi
     
     if [ -z "$OASIS_API_KEY" ]; then
-        log_error "OASIS_API_KEY not set in $TENANT_CONFIG"
+        log_error "OASIS_API_KEY not set in tenant.conf"
         exit 1
     fi
     
     if [ -z "$OASIS_TENANT_ID" ]; then
-        log_error "OASIS_TENANT_ID not set in $TENANT_CONFIG"
+        log_error "OASIS_TENANT_ID not set in tenant.conf"
         exit 1
     fi
     
@@ -208,11 +247,10 @@ load_tenant_config() {
     OASIS_GATEWAY_PORT="${OASIS_GATEWAY_PORT:-8444}"
     
     # Extract CA certificate from config file
-    OASIS_CA_CERT=$(sed -n '/#--- BEGIN OASIS CA CERTIFICATE ---/,/#--- END OASIS CA CERTIFICATE ---/p' "$TENANT_CONFIG" | \
-                    grep -v "^#" | grep -v "^$")
+    OASIS_CA_CERT=$(awk '/-----BEGIN CERTIFICATE-----/, /-----END CERTIFICATE-----/' "$source_config")
     
     if [ -z "$OASIS_CA_CERT" ]; then
-        log_error "CA certificate not found in $TENANT_CONFIG"
+        log_error "CA certificate not found in tenant.conf"
         log_error "Please ensure the certificate is embedded between:"
         log_error "  #--- BEGIN OASIS CA CERTIFICATE ---"
         log_error "  #--- END OASIS CA CERTIFICATE ---"
@@ -224,74 +262,19 @@ load_tenant_config() {
     log_info "  Tenant:  $OASIS_TENANT_ID"
 }
 
-fix_homebrew_permissions() {
-    log_info "Checking Homebrew installation and permissions..."
-
-    # Get current user (handle both sudo and non-sudo contexts)
-    local current_user=${SUDO_USER:-$(whoami)}
-
-    log_info "Current user: $current_user"
-    log_info "Fixing any Homebrew permission issues..."
-
-    # Run brew doctor to check for issues
-    if su - ${current_user} -c "brew doctor &> /dev/null" ; then
-        log_success "Homebrew installation is healthy"
-    else
-        log_warning "Homebrew doctor found issues"
-        su - ${current_user} -c "brew doctor" || true
-    fi
-
-    # Fix common permission issues in Homebrew directories
-    log_info "Checking and fixing Homebrew directory permissions..."
-
-    local brew_dirs=(
-        "/usr/local"
-        "/usr/local/bin"
-        "/usr/local/etc"
-        "/usr/local/lib"
-        "/usr/local/share"
-        "/usr/local/share/man"
-        "/usr/local/share/man/man8"
-    )
-
-    local fixed_count=0
-    for dir in "${brew_dirs[@]}"; do
-        if [ -d "$dir" ]; then
-            local dir_owner=$(stat -f "%u" "$dir" 2>/dev/null || stat -c "%u" "$dir" 2>/dev/null || echo "0")
-            local current_uid=$(id -u)
-            
-            if [ "$dir_owner" != "$current_uid" ] && [ -n "$SUDO_USER" ]; then
-                log_info "Fixing ownership of: $dir"
-                chown -R ${current_user} "$dir" 2>/dev/null && fixed_count=$((fixed_count + 1))
-            fi
-        fi
-    done
-
-    # Ensure Homebrew can write to its directories
-    if [ -f "/usr/local/bin/brew" ] || [ -f "/opt/homebrew/bin/brew" ]; then
-        log_success "Homebrew binary found and accessible"
-    else
-        log_warning "Homebrew binary not found in standard location"
-        log_info "You may need to reinstall Homebrew if permission fixes didn't help"
-    fi
-
-    if [ $fixed_count -gt 0 ]; then
-        log_success "Fixed permissions for $fixed_count directories"
-    fi
-}
-
 install_fluent_bit() {
-    log_info "Installing Fluent Bit via Homebrew..."
-    
-    # Update Homebrew
-    su - ${SUDO_USER} -c "brew update" || true
-    
-    # Install or upgrade Fluent Bit
-    if su - ${SUDO_USER} -c "brew list fluent-bit &>/dev/null"; then
+    log_info "Installing Fluent Bit via Homebrew (no sudo required)..."
+
+    # Update Homebrew (run as regular user)
+    brew update || true
+
+    # Install or upgrade Fluent Bit (run as regular user)
+    if brew list fluent-bit &>/dev/null; then
         log_info "Fluent Bit is already installed, upgrading..."
-        su - ${SUDO_USER} -c "brew upgrade fluent-bit" || true
+        brew upgrade fluent-bit || true
     else
-        su - ${SUDO_USER} -c "brew install fluent-bit"
+        log_info "Installing Fluent Bit..."
+        brew install fluent-bit
     fi
 
     log_success "Fluent Bit installed successfully"
@@ -494,71 +477,71 @@ EOF
 }
 
 create_launchd_service() {
-    log_info "Creating launchd service..."
+    log_info "Creating launchd service (requires sudo for /Library/LaunchDaemons)..."
     
     # Stop existing service if running
     if [ -f "$PLIST_PATH" ]; then
-        launchctl unload "$PLIST_PATH" 2>/dev/null || true
+        sudo launchctl unload "$PLIST_PATH" 2>/dev/null || true
     fi
     
     # Find fluent-bit binary path
     local fb_bin=$(which fluent-bit)
     
-    # Create launchd plist
-    cat > "$PLIST_PATH" <<EOF
+    # Create launchd plist (requires sudo to write to /Library/LaunchDaemons)
+    sudo tee "$PLIST_PATH" > /dev/null <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
     <string>${PLIST_NAME}</string>
-    
+
     <key>ProgramArguments</key>
     <array>
         <string>${fb_bin}</string>
         <string>-c</string>
         <string>${CONFIG_DIR}/fluent-bit.conf</string>
     </array>
-    
+
     <key>RunAtLoad</key>
     <true/>
-    
+
     <key>KeepAlive</key>
     <true/>
-    
+
     <key>StandardOutPath</key>
     <string>${LOG_DIR}/stdout.log</string>
-    
+
     <key>StandardErrorPath</key>
     <string>${LOG_DIR}/stderr.log</string>
-    
+
     <key>WorkingDirectory</key>
     <string>${LOG_DIR}</string>
-    
+
     <key>ThrottleInterval</key>
     <integer>10</integer>
 </dict>
 </plist>
 EOF
     
-    # Set permissions
-    chmod 644 "$PLIST_PATH"
-    chown root:wheel "$PLIST_PATH"
+    # Set permissions (requires sudo)
+    sudo chmod 644 "$PLIST_PATH"
+    sudo chown root:wheel "$PLIST_PATH"
     
     log_success "Launchd service created"
 }
 
 start_service() {
-    log_info "Starting Fluent Bit service..."
+    log_info "Starting Fluent Bit service (requires sudo for launchctl)..."
     
-    # Load service
-    launchctl load "$PLIST_PATH"
+    # Load service (requires sudo)
+    sudo launchctl load "$PLIST_PATH"
     
     # Wait a moment for service to start
     sleep 2
     
     # Check if running
-    if launchctl list | grep -q "$PLIST_NAME"; then
+    if sudo launchctl list | grep -q "$PLIST_NAME"; then
         log_success "Fluent Bit service started successfully"
     else
         log_error "Failed to start Fluent Bit service"
@@ -602,16 +585,22 @@ main() {
     log_info "=== O.A.S.I.S. Fluent Bit Deployment (macOS) ==="
     echo
     
-    check_root
+    # Phase 1: User-level checks (no sudo required)
+    check_not_root
     detect_architecture
     check_macos_version
     check_homebrew
-    setup_tenant_config
+    
+    # Phase 2: Load configuration from script directory (no sudo required)
     load_tenant_config
-    fix_homebrew_permissions
+    
+    # Phase 3: User-level operations with Homebrew (no sudo required)
     install_fluent_bit
     register_agent
     create_config
+    
+    # Phase 4: System-level operations (sudo required inline)
+    setup_system_tenant_config
     create_launchd_service
     start_service
     
