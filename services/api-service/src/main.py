@@ -255,6 +255,71 @@ class ResetPasswordResponse(BaseModel):
     message: str
 
 
+# Subscription Management Models
+class SubscriptionRequest(BaseModel):
+    tenant_id: str
+    notification_level: str = "all"
+
+
+class SubscriptionResponse(BaseModel):
+    id: str
+    analyst_id: str
+    tenant_id: str
+    tenant_name: str
+    notification_level: str
+    subscribed_at: str
+
+
+class SubscriptionListResponse(BaseModel):
+    subscriptions: List[SubscriptionResponse]
+    total: int
+
+
+# Dashboard Management Models
+class DashboardRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    tenant_scope: str = "all"
+    tenant_ids: Optional[List[str]] = None
+    widgets: List[Dict[str, Any]] = []
+    is_template: bool = False
+
+
+class DashboardResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    owner_id: str
+    owner_username: Optional[str] = None
+    is_template: bool
+    widgets: List[Dict[str, Any]]
+    tenant_scope: str
+    tenant_ids: Optional[List[str]] = None
+    created_at: str
+    updated_at: str
+    last_accessed_at: Optional[str] = None
+
+
+class DashboardListResponse(BaseModel):
+    dashboards: List[DashboardResponse]
+    total: int
+
+
+# Agent Timeline Models
+class TimelineEntry(BaseModel):
+    timestamp: str
+    status: str
+    source: str
+    metadata: Dict[str, Any]
+
+
+class AgentTimelineResponse(BaseModel):
+    agent_id: str
+    hostname: str
+    timeline: List[TimelineEntry]
+    total: int
+
+
 # Dependencies
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     """Validate JWT and return current user"""
@@ -1962,6 +2027,708 @@ async def query_logs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Query failed: {str(e)}",
+        )
+
+
+# ==================================================================
+# Phase 2C: Analyst Subscriptions
+# ==================================================================
+
+
+@app.get("/subscriptions", response_model=SubscriptionListResponse)
+async def list_subscriptions(
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List analyst's subscriptions to tenants
+
+    Accessible by SOC analysts. Returns all tenants the analyst is subscribed to.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] != "soc_analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SOC analysts can access subscriptions",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT 
+                    s.id,
+                    s.analyst_id,
+                    s.tenant_id,
+                    t.name as tenant_name,
+                    s.notification_level,
+                    s.subscribed_at
+                FROM analyst_tenant_subscriptions s
+                JOIN tenants t ON s.tenant_id = t.id
+                WHERE s.analyst_id = $1
+                ORDER BY s.subscribed_at DESC
+                """,
+                current_user["user_id"],
+            )
+
+            subscriptions = [
+                SubscriptionResponse(
+                    id=str(row["id"]),
+                    analyst_id=str(row["analyst_id"]),
+                    tenant_id=str(row["tenant_id"]),
+                    tenant_name=row["tenant_name"],
+                    notification_level=row["notification_level"],
+                    subscribed_at=row["subscribed_at"].isoformat(),
+                )
+                for row in rows
+            ]
+
+            return SubscriptionListResponse(
+                subscriptions=subscriptions,
+                total=len(subscriptions),
+            )
+
+    except Exception as e:
+        logger.error("subscriptions_list_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list subscriptions: {str(e)}",
+        )
+
+
+@app.post(
+    "/subscriptions", response_model=SubscriptionResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_subscription(
+    request: SubscriptionRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Subscribe to a tenant
+
+    Accessible by SOC analysts. Creates a new subscription to monitor a specific tenant.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] != "soc_analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SOC analysts can create subscriptions",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Verify tenant exists
+            tenant = await conn.fetchrow(
+                "SELECT id, name FROM tenants WHERE id = $1",
+                request.tenant_id,
+            )
+
+            if not tenant:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Tenant not found",
+                )
+
+            # Validate notification_level
+            valid_levels = ["all", "critical_only", "none"]
+            if request.notification_level not in valid_levels:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid notification_level. Must be one of: {', '.join(valid_levels)}",
+                )
+
+            row = await conn.fetchrow(
+                """
+                INSERT INTO analyst_tenant_subscriptions (analyst_id, tenant_id, notification_level)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (analyst_id, tenant_id)
+                DO UPDATE SET notification_level = EXCLUDED.notification_level
+                RETURNING id, analyst_id, tenant_id, notification_level, subscribed_at
+                """,
+                current_user["user_id"],
+                request.tenant_id,
+                request.notification_level,
+            )
+
+        logger.info(
+            "subscription_created",
+            user_id=current_user["user_id"],
+            tenant_id=request.tenant_id,
+            notification_level=request.notification_level,
+        )
+
+        return SubscriptionResponse(
+            id=str(row["id"]),
+            analyst_id=str(row["analyst_id"]),
+            tenant_id=str(row["tenant_id"]),
+            tenant_name=tenant["name"],
+            notification_level=row["notification_level"],
+            subscribed_at=row["subscribed_at"].isoformat(),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("subscription_creation_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create subscription: {str(e)}",
+        )
+
+
+@app.put("/subscriptions/{tenant_id}", response_model=SubscriptionResponse)
+async def update_subscription(
+    tenant_id: str,
+    notification_level: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Update subscription notification level
+
+    Accessible by SOC analysts. Updates the notification preference for a subscription.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] != "soc_analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SOC analysts can update subscriptions",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Validate notification_level
+            valid_levels = ["all", "critical_only", "none"]
+            if notification_level not in valid_levels:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid notification_level. Must be one of: {', '.join(valid_levels)}",
+                )
+
+            row = await conn.fetchrow(
+                """
+                UPDATE analyst_tenant_subscriptions
+                SET notification_level = $1
+                WHERE analyst_id = $2 AND tenant_id = $3
+                RETURNING id, analyst_id, tenant_id, notification_level, subscribed_at
+                """,
+                notification_level,
+                current_user["user_id"],
+                tenant_id,
+            )
+
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Subscription not found",
+                )
+
+            # Get tenant name
+            tenant = await conn.fetchrow(
+                "SELECT name FROM tenants WHERE id = $1",
+                tenant_id,
+            )
+
+        logger.info(
+            "subscription_updated",
+            user_id=current_user["user_id"],
+            tenant_id=tenant_id,
+            notification_level=notification_level,
+        )
+
+        return SubscriptionResponse(
+            id=str(row["id"]),
+            analyst_id=str(row["analyst_id"]),
+            tenant_id=str(row["tenant_id"]),
+            tenant_name=tenant["name"] if tenant else "Unknown",
+            notification_level=row["notification_level"],
+            subscribed_at=row["subscribed_at"].isoformat(),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("subscription_update_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update subscription: {str(e)}",
+        )
+
+
+@app.delete("/subscriptions/{tenant_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_subscription(
+    tenant_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Unsubscribe from a tenant
+
+    Accessible by SOC analysts. Removes a subscription to a tenant.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] != "soc_analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SOC analysts can delete subscriptions",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM analyst_tenant_subscriptions WHERE analyst_id = $1 AND tenant_id = $2",
+                current_user["user_id"],
+                tenant_id,
+            )
+
+            if result == "DELETE 0":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Subscription not found",
+                )
+
+        logger.info(
+            "subscription_deleted",
+            user_id=current_user["user_id"],
+            tenant_id=tenant_id,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("subscription_deletion_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete subscription: {str(e)}",
+        )
+
+
+# ==================================================================
+# Phase 2C: Dashboard Management
+# ==================================================================
+
+
+@app.get("/dashboards", response_model=DashboardListResponse)
+async def list_dashboards(
+    include_templates: bool = True,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    List dashboards
+
+    Accessible by SOC analysts. Returns user's dashboards and templates.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] != "soc_analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SOC analysts can access dashboards",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            if include_templates:
+                query = """
+                    SELECT 
+                        d.id,
+                        d.name,
+                        d.description,
+                        d.owner_id,
+                        u.username as owner_username,
+                        d.is_template,
+                        d.widgets,
+                        d.tenant_scope,
+                        d.tenant_ids,
+                        d.created_at,
+                        d.updated_at,
+                        d.last_accessed_at
+                    FROM dashboard_templates d
+                    LEFT JOIN users u ON d.owner_id = u.id
+                    WHERE (d.owner_id = $1 OR d.is_template = true)
+                        AND d.is_deleted = false
+                    ORDER BY d.is_template, d.updated_at DESC
+                """
+                rows = await conn.fetch(query, current_user["user_id"])
+            else:
+                query = """
+                    SELECT 
+                        d.id,
+                        d.name,
+                        d.description,
+                        d.owner_id,
+                        u.username as owner_username,
+                        d.is_template,
+                        d.widgets,
+                        d.tenant_scope,
+                        d.tenant_ids,
+                        d.created_at,
+                        d.updated_at,
+                        d.last_accessed_at
+                    FROM dashboard_templates d
+                    LEFT JOIN users u ON d.owner_id = u.id
+                    WHERE d.owner_id = $1 AND d.is_deleted = false
+                    ORDER BY d.updated_at DESC
+                """
+                rows = await conn.fetch(query, current_user["user_id"])
+
+            dashboards = [
+                DashboardResponse(
+                    id=str(row["id"]),
+                    name=row["name"],
+                    description=row["description"],
+                    owner_id=str(row["owner_id"]),
+                    owner_username=row.get("owner_username"),
+                    is_template=row["is_template"],
+                    widgets=json.loads(row["widgets"])
+                    if isinstance(row["widgets"], str)
+                    else row["widgets"],
+                    tenant_scope=row["tenant_scope"],
+                    tenant_ids=[str(t) for t in row["tenant_ids"]] if row["tenant_ids"] else None,
+                    created_at=row["created_at"].isoformat(),
+                    updated_at=row["updated_at"].isoformat(),
+                    last_accessed_at=row["last_accessed_at"].isoformat()
+                    if row["last_accessed_at"]
+                    else None,
+                )
+                for row in rows
+            ]
+
+            return DashboardListResponse(
+                dashboards=dashboards,
+                total=len(dashboards),
+            )
+
+    except Exception as e:
+        logger.error("dashboards_list_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to list dashboards: {str(e)}",
+        )
+
+
+@app.post("/dashboards", response_model=DashboardResponse, status_code=status.HTTP_201_CREATED)
+async def create_dashboard(
+    request: DashboardRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Create a new dashboard
+
+    Accessible by SOC analysts. Creates a custom dashboard.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] != "soc_analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SOC analysts can create dashboards",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Validate tenant_scope
+            valid_scopes = ["all", "subscribed", "specific"]
+            if request.tenant_scope not in valid_scopes:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid tenant_scope. Must be one of: {', '.join(valid_scopes)}",
+                )
+
+            # Convert tenant_ids to UUID array
+            tenant_ids = None
+            if request.tenant_ids:
+                tenant_ids = [str(t) for t in request.tenant_ids]
+
+            row = await conn.fetchrow(
+                """
+                INSERT INTO dashboard_templates (name, description, owner_id, is_template, widgets, tenant_scope, tenant_ids)
+                VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+                RETURNING id, name, description, owner_id, is_template, widgets, tenant_scope, tenant_ids, created_at, updated_at
+                """,
+                request.name,
+                request.description,
+                current_user["user_id"],
+                request.is_template,
+                json.dumps(request.widgets),
+                request.tenant_scope,
+                tenant_ids,
+            )
+
+        logger.info(
+            "dashboard_created",
+            user_id=current_user["user_id"],
+            dashboard_name=request.name,
+        )
+
+        return DashboardResponse(
+            id=str(row["id"]),
+            name=row["name"],
+            description=row["description"],
+            owner_id=str(row["owner_id"]),
+            owner_username=current_user.get("username"),
+            is_template=row["is_template"],
+            widgets=json.loads(row["widgets"])
+            if isinstance(row["widgets"], str)
+            else row["widgets"],
+            tenant_scope=row["tenant_scope"],
+            tenant_ids=[str(t) for t in row["tenant_ids"]] if row["tenant_ids"] else None,
+            created_at=row["created_at"].isoformat(),
+            updated_at=row["updated_at"].isoformat(),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("dashboard_creation_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create dashboard: {str(e)}",
+        )
+
+
+@app.get("/dashboards/{dashboard_id}", response_model=DashboardResponse)
+async def get_dashboard(
+    dashboard_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get a specific dashboard
+
+    Accessible by SOC analysts. Returns dashboard details and updates last_accessed_at.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] != "soc_analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SOC analysts can access dashboards",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT 
+                    d.id,
+                    d.name,
+                    d.description,
+                    d.owner_id,
+                    u.username as owner_username,
+                    d.is_template,
+                    d.widgets,
+                    d.tenant_scope,
+                    d.tenant_ids,
+                    d.created_at,
+                    d.updated_at,
+                    d.last_accessed_at
+                FROM dashboard_templates d
+                LEFT JOIN users u ON d.owner_id = u.id
+                WHERE d.id = $1 AND d.is_deleted = false
+                """,
+                dashboard_id,
+            )
+
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dashboard not found",
+                )
+
+            # Update last_accessed_at
+            await conn.execute(
+                "UPDATE dashboard_templates SET last_accessed_at = NOW() WHERE id = $1",
+                dashboard_id,
+            )
+
+        logger.info(
+            "dashboard_accessed",
+            user_id=current_user["user_id"],
+            dashboard_id=dashboard_id,
+        )
+
+        return DashboardResponse(
+            id=str(row["id"]),
+            name=row["name"],
+            description=row["description"],
+            owner_id=str(row["owner_id"]),
+            owner_username=row.get("owner_username"),
+            is_template=row["is_template"],
+            widgets=json.loads(row["widgets"])
+            if isinstance(row["widgets"], str)
+            else row["widgets"],
+            tenant_scope=row["tenant_scope"],
+            tenant_ids=[str(t) for t in row["tenant_ids"]] if row["tenant_ids"] else None,
+            created_at=row["created_at"].isoformat(),
+            updated_at=row["updated_at"].isoformat(),
+            last_accessed_at=row["last_accessed_at"].isoformat()
+            if row["last_accessed_at"]
+            else None,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("dashboard_fetch_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch dashboard: {str(e)}",
+        )
+
+
+@app.delete("/dashboards/{dashboard_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_dashboard(
+    dashboard_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Delete a dashboard
+
+    Accessible by SOC analysts. Soft deletes a dashboard (sets is_deleted=true).
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] != "soc_analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only SOC analysts can delete dashboards",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Only allow deletion of own dashboards
+            result = await conn.execute(
+                """
+                UPDATE dashboard_templates
+                SET is_deleted = true, deleted_at = NOW()
+                WHERE id = $1 AND owner_id = $2
+                RETURNING id
+                """,
+                dashboard_id,
+                current_user["user_id"],
+            )
+
+            if result == "UPDATE 0":
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Dashboard not found or you don't have permission to delete it",
+                )
+
+        logger.info(
+            "dashboard_deleted",
+            user_id=current_user["user_id"],
+            dashboard_id=dashboard_id,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("dashboard_deletion_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete dashboard: {str(e)}",
+        )
+
+
+# ==================================================================
+# Phase 2C: Agent Timeline
+# ==================================================================
+
+
+@app.get("/agents/{agent_id}/timeline", response_model=AgentTimelineResponse)
+async def get_agent_timeline(
+    agent_id: str,
+    days: int = 7,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Get agent status timeline
+
+    Accessible by SOC analysts. Returns historical status changes for an agent.
+    """
+    if not pg_pool:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+
+    if current_user["credential_type"] not in ["platform_admin", "soc_analyst"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only platform administrators and SOC analysts can access agent timeline",
+        )
+
+    if days < 1 or days > 90:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Days must be between 1 and 90",
+        )
+
+    try:
+        async with pg_pool.acquire() as conn:
+            # Get agent info
+            agent = await conn.fetchrow(
+                "SELECT id, hostname FROM agents WHERE id = $1",
+                agent_id,
+            )
+
+            if not agent:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Agent not found",
+                )
+
+            # Get timeline entries
+            rows = await conn.fetch(
+                """
+                SELECT timestamp, status, source, metadata
+                FROM agent_status_timeline
+                WHERE agent_id = $1 AND timestamp > NOW() - ($2 || ' days')::interval
+                ORDER BY timestamp DESC
+                """,
+                agent_id,
+                days,
+            )
+
+            timeline = [
+                TimelineEntry(
+                    timestamp=row["timestamp"].isoformat(),
+                    status=row["status"],
+                    source=row["source"],
+                    metadata=json.loads(row["metadata"])
+                    if isinstance(row["metadata"], str)
+                    else row["metadata"],
+                )
+                for row in rows
+            ]
+
+        logger.info(
+            "agent_timeline_queried",
+            user_id=current_user["user_id"],
+            agent_id=agent_id,
+            entries=len(timeline),
+        )
+
+        return AgentTimelineResponse(
+            agent_id=str(agent["id"]),
+            hostname=agent["hostname"],
+            timeline=timeline,
+            total=len(timeline),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("agent_timeline_query_failed", error=str(e), user_id=current_user["user_id"])
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch agent timeline: {str(e)}",
         )
 
 

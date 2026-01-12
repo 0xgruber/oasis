@@ -1,10 +1,10 @@
 # O.A.S.I.S. Phase Tracker
 
-**Last Updated:** 2026-01-11 (Phase 2A complete - multi-credential RBAC + metrics service)
+**Last Updated:** 2026-01-12 (Phase 2B complete - enhanced agent data, deployment fixes, OCSF severity alignment)
 
 ## Current Status
 
-**Active Phase:** Phase 2B - Agent Management & Monitoring  
+**Active Phase:** Phase 2C - S.O.C.A.P. - Analyst Dashboards & Workflows (NEXT)  
 **Branch:** `develop`  
 **Production Release:** v1.0.0 (when ALL phases complete)
 
@@ -207,14 +207,17 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 
 #### Phase 2B: Agent Management & Monitoring
 **Status:** Complete ✅  
-**Completed:** 2026-01-11  
-**Branch:** `develop`
+**Completed:** 2026-01-12 | **Branch:** `develop`
 
-**Goals:**
-- Agent data model and heartbeat mechanism
-- Dynamic status calculation (online/offline/dead)
-- Per-tenant threshold overrides
-- Agent management UIs across Admin and SOC portals
+**Goals:** enhanced
+- Agent data model and heartbeat mechanism (COMPLETED ✅)
+- Dynamic status calculation (online/offline/dead) (COMPLETED ✅)
+- Per-tenant threshold overrides (COMPLETED ✅)
+- Agent management UIs across Admin and SOC portals (COMPLETED ✅)
+- Enhanced system information collection for agents (COMPLETED ✅)
+- OCSF severity mapping standardization (COMPLETED ✅)
+- Deployment script fixes for all platforms (COMPLETED ✅)
+- Dependency removal in cleanup scripts (COMPLETED ✅)
 
 **Completion Criteria:**
 - [x] Agent heartbeat: Update `last_seen_at` on log ingestion
@@ -225,16 +228,100 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - [x] API: `GET /api/agents/status` (status breakdown)
 - [x] Admin Portal: Agent listing UI (list, filters, search, pagination, status breakdown)
 - [x] S.O.C.A.P.: Global agent dashboard (all tenants, status breakdown)
+- [x] Enhanced agent modal: Click agent row → modal with full details
+- [x] Database: Enhanced agent schema with 4 new columns (architecture, kernel_version, mac_addresses, network_interfaces)
+- [x] Data collection: Agent scripts enhanced to collect system info directly from OS
+- [x] Linux agent: Full OS version (Ubuntu 24.04.x), kernel, architecture, MACs, network interfaces
+- [x] Windows agent: Windows Server version (from DisplayVersion), architecture (x86/ARM64), MACs, interfaces
+- [x] macOS agent: macOS version, architecture (Intel/Apple Silicon), MACs, interfaces
+- [x] Backend normalization: OCSF-compliant severity mapping (0=Unknown, 1=Informational, 2=Low, 3=Medium, 4=High, 5=Critical, 6=Fatal, 99=Other)
+- [x Separated debug (severity_id=2) from informational (severity_id=1)
+- [x] Frontend: Show OCSF-compliant severity labels in log viewer
+- [x] Frontend: Display original severity string in log details modal for reference
+- [x] Linux script: Fixed fluent-bit path and added missing log_debug function
+- [x] Windows script: Migrated from sc.exe to native PowerShell (New-Service, Remove-Service)
+- [x] Windows script: Fixed CIM method invocation errors for service recovery
+- [x] macOS script: Hybrid sudo approach (Homebrew without sudo, selective sudo for system ops)
+- [x] macOS script: Added setup_system_tenant_config() and improved error handling
+- [x] All cleanup scripts: Added dependency removal prompts with safe defaults
+- [x] Systemd protected from removal in Linux cleanup script
+- [x] Customer Portal agent view moved to Phase 2D (self-service features)
+
+**Key Features Implemented:**
+
+1. **Agent Modal (both Admin and SOC portals):**
+   - Click agent row → Modal with 3 sections:
+     - Basic Information: Status, Hostname, Role (Agent/Collector badge), OS, Last Seen, Agent Type
+     - Identification: Agent ID and Tenant ID
+     - System Information (NEW): Architecture, Kernel (Linux only), MAC Addresses, Network Interfaces
+
+2. **Enhanced Agent Data Collection:**
+   - **Linux**: Full OS version with patch level (e.g., "Ubuntu 24.04.3 LTS")
+   - **Windows**: Windows Server version from registry DisplayVersion (e.g., "Windows Server 2025 24H2")
+   - **macOS**: macOS version (e.g., "macOS 14.2.1")
+   - All platforms: Architecture, kernel (Linux), MACs, network interfaces
+
+3. **OSCSF Severity Mapping:**
+   - Corrected severity_id: 1 shows "Informational" instead of "Debug" 
+   - Separated debug (severity_id: 2) from informational (severity_id: 1)
+   - Mapping: 0=Unknown, 1=Informational, 2=Low, 3=Medium, 4=High, 5=Critical, 6=Fatal, 99=Other
+   - Progressive color scheme: gray→blue→yellow→orange→red based on severity
+   - Original severity strings preserved in log details modal
+
+4. **Deployment Script Improvements:**
+   - **Linux**: Fixed fluent-bit binary path, added log_debug function
+   - **Windows**: Replaced sc.exe with native PowerShell (New-Service, Remove-Service)
+   - **macOS**: Hybrid sudo approach - runs Homebrew as regular user, uses sudo only for /etc/oasis and LaunchDaemon
+
+5. **Cleanup Script Enhancements:**
+   - All 3 platforms: Prompt for dependency removal before cleanup
+   - **Linux**: Remove curl, wget (systemd protected with warning)
+   - **macOS**: Remove fluent-bit via Homebrew
+   - **Windows**: Check for additional Fluent Bit installations outside OASIS directory
+
+**Enhancements During Phase 2B:**
+
+**Agent Role Support:**
+- Added `agent_role` field to agents table (VARCHAR(20) with default "agent")
+- Enhanced to support distinguishing between "agent" and "collector" types
+- Deployment scripts now collect this field during registration
+
+**Database Migration:**
+- Added 4 new columns to agents table: architecture, kernel_version, mac_addresses, network_interfaces
+- Enhanced upsert_agent function with new parameters
+ migrations/phase2b_enhanced_agent_data.sql
+
+**Frontend Components:**
+- Created reusable AgentsModal component with detailed agent information display
+- Enhanced Agent type definition with new fields
+- Added theme-aware styling for both professional and cyber themes
+
+**Git Commits (Phase 2B):**
+| Commit | Feature |
+|--------|---------|
+| b911b3b | feat(agents): collect enhanced system information at agent source |
+| 722d7b9 | fix(agents): restore missing Basic Information cards in modal |
+| 45ac980 | fix(linux): fix missing log_debug function and fluent-bit path |
+| 15a5077 | fix(windows): migrate from sc.exe to native PowerShell cmdlets |
+| 35da0c9 | fix(windows): fix CIM method invocation error for service recovery |
+| e351053 | fix(macos): add missing setup_tenant_config function |
+| fd2cb05 | fix(linux/macos): fix GRAY color variable undefined error |
+| ce7cf34 | fix(macos): add Homebrew permissions fix before installation |
+| 3aa0e1e | fix(severity): align severity mappings to OCSF standard |
+| 6309067 | feat(themes): align SOC professional theme with Admin portal |
+| c6b9e39 | feat(agents): convert from Toast to Modal matching Service Status UI |
+| f745a3f | feat(cleanup): add dependency removal prompts to all cleanup scripts |
+| 4005ca2 | refactor(macos): use hybrid sudo approach for Homebrew compliance |
 
 **Notes:**
+- Phase 2B now complete - enhanced agent management across all internal portals ✅
+- Enhanced agent modal with detailed system information display ✅
+- All deployment scripts fixed and optimized ✅
+- Severity mapping aligned to OCSF standard ✅
+- Theme alignment across portals ✅
+- Cleanup scripts improved with dependency removal ✅
 - Customer Portal agent view moved to Phase 2D (self-service features)
-- Config download with API key generation moved to Phase 2D
-- Phase 2B now complete - foundation for all agent management across internal portals
-
-**Agent Status System:**
-- States: `online`, `offline`, `dead`, `error`
-- Thresholds configurable globally + per-tenant overrides
-- Status computed dynamically (no stored state)
+- Ready to proceed with Phase 2C: S.O.C.A.P. dashboards and analyst workflows
 
 ---
 
