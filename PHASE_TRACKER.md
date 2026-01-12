@@ -326,7 +326,7 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 ---
 
 #### Phase 2C: S.O.C.A.P. - Analyst Dashboards & Workflows
-**Status:** In Progress (started 2026-01-12) | **Branch:** `develop`
+**Status:** Partially Complete (85% done - dashboard builder deferred) | **Branch:** `develop`
 
 **Goals:**
 - Analyst subscription system
@@ -348,7 +348,7 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - [x] API: `GET /api/agents/{id}/timeline` (agent status history)
 - [x] S.O.C.A.P.: "My Tenants" vs "All Tenants" toggle (agents page)
 - [x] S.O.C.A.P.: "My Tenants" vs "All Tenants" toggle (dashboard page)
-- [ ] S.O.C.A.P.: Custom dashboard builder (drag-drop widgets)
+- [~] S.O.C.A.P.: Custom dashboard builder (drag-drop widgets) **[DEFERRED]**
 - [x] S.O.C.A.P.: Agent status timeline visualization (last 7 days)
 - [x] S.O.C.A.P.: Clickable drill-downs (tenant → agents → logs)
 - [x] UI components: Alert placeholders (for Phase 3 integration)
@@ -406,14 +406,14 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 
 **Notes:**
 - Phase 2C is ~85% complete - all backend APIs implemented, most frontend components done
-- Custom dashboard builder (drag-drop widgets) is the only remaining major feature
-- This feature can be deferred to later if needed, as basic dashboard functionality exists
+- Custom dashboard builder (drag-drop widgets) **DEFERRED** to later phase
+- Core functionality complete: subscriptions, tenant filtering, agent timelines, drill-downs
+- Ready to proceed with Phase 2D (Customer Portal) or other phases
 
 ---
 
 #### Phase 2D: Customer Portal - Self-Service Features
-**Status:** Pending  
-**Estimated Duration:** 2-3 weeks
+**Status:** In Progress (API groundwork started) | **Branch:** `develop`
 
 **Goals:**
 - Customer authentication (separate from internal)
@@ -422,6 +422,8 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - API key management UI
 
 **Completion Criteria:**
+- [x] Backend: Tenant management API endpoints (create, list, get, update, delete)
+- [x] Backend: API key management endpoints (create, deactivate)
 - [ ] Customer portal authentication (JWT, tenant-isolated)
 - [ ] Log viewer: Tenant-isolated queries (ClickHouse per-tenant tables)
 - [ ] Log export: CSV/JSON downloads
@@ -430,6 +432,20 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - [ ] API key management: List keys (prefix, created, last used)
 - [ ] API key management: Revoke keys
 - [ ] Config download: `tenant.conf` with fresh API key
+
+**API Endpoints Added (Phase 2D - Part 1):**
+- `POST /tenants` - Create tenant with auto-generated API key
+- `GET /tenants` - List all tenants (with pagination, search, filters)
+- `GET /tenants/{id}` - Get tenant details with stats
+- `PUT /tenants/{id}` - Update tenant settings
+- `DELETE /tenants/{id}` - Soft/hard delete tenant
+- `POST /tenants/{id}/api-keys` - Generate new API key
+- `PUT /api-keys/{id}/deactivate` - Deactivate API key
+
+**Notes:**
+- Backend tenant/API key management complete (Admin Portal integration pending)
+- ClickHouse table creation/deletion automated for tenant lifecycle
+- API key format: `oasis_pk_<32_random_chars>` with prefix storage
 
 **Security:**
 - Customers can ONLY query their own tenant's logs
