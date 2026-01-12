@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { useTheme } from '@/contexts/ThemeContext';
 import { logsApi, LogEntry } from '@/lib/api';
@@ -23,6 +24,7 @@ const SEVERITY_MAP: Record<number, {
 };
 
 export default function LogsPage() {
+  const searchParams = useSearchParams();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,10 +34,14 @@ export default function LogsPage() {
   const { theme } = useTheme();
   const logsPerPage = 50;
 
+  // Get filter parameters from URL
+  const tenantFilter = searchParams?.get('tenant_id');
+  const agentFilter = searchParams?.get('agent_id');
+
   useEffect(() => {
     fetchLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentPage]);
+  }, [currentPage, tenantFilter, agentFilter]);
 
   const fetchLogs = async () => {
     setLoading(true);
@@ -79,7 +85,50 @@ export default function LogsPage() {
             </h1>
             <p className="mt-1" style={{ color: 'var(--text-secondary)' }}>
               {totalLogs.toLocaleString()} total logs
+              {(tenantFilter || agentFilter) && (
+                <span> (filtered)</span>
+              )}
             </p>
+            {/* Active Filters */}
+            {(tenantFilter || agentFilter) && (
+              <div className="flex items-center gap-2 mt-2">
+                {tenantFilter && (
+                  <span
+                    className="px-2 py-1 rounded text-xs font-medium"
+                    style={{
+                      background: 'rgba(59, 130, 246, 0.2)',
+                      color: '#60a5fa',
+                      border: '1px solid #60a5fa',
+                    }}
+                  >
+                    Tenant: {tenantFilter}
+                  </span>
+                )}
+                {agentFilter && (
+                  <span
+                    className="px-2 py-1 rounded text-xs font-medium"
+                    style={{
+                      background: 'rgba(168, 85, 247, 0.2)',
+                      color: '#a855f7',
+                      border: '1px solid #a855f7',
+                    }}
+                  >
+                    Agent: {agentFilter}
+                  </span>
+                )}
+                <button
+                  onClick={() => window.location.href = '/dashboard/logs'}
+                  className="text-xs px-2 py-1 rounded hover:opacity-80"
+                  style={{
+                    background: 'rgba(239, 68, 68, 0.2)',
+                    color: '#ef4444',
+                    border: '1px solid #ef4444',
+                  }}
+                >
+                  Clear Filters
+                </button>
+              </div>
+            )}
           </div>
           <button
             onClick={fetchLogs}

@@ -176,6 +176,37 @@ export default function AgentsModal({ agent, onClose, formatLastSeen }: AgentsMo
           </div>
         </div>
 
+        {/* Quick Actions */}
+        <div className="mb-6">
+          <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
+            Quick Actions
+          </h4>
+          <div className="flex gap-3">
+            <a
+              href={`/dashboard/logs?agent_id=${agent.agent_id}`}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80"
+              style={{
+                background: theme === 'cyber' ? 'rgba(0, 212, 255, 0.2)' : '#3b82f6',
+                color: theme === 'cyber' ? '#00d4ff' : '#ffffff',
+                border: theme === 'cyber' ? '1px solid #00d4ff' : 'none',
+              }}
+            >
+              🔍 View Agent Logs
+            </a>
+            <a
+              href={`/dashboard/logs?tenant_id=${agent.tenant_id}`}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors hover:opacity-80"
+              style={{
+                background: theme === 'cyber' ? 'rgba(0, 255, 159, 0.2)' : '#10b981',
+                color: theme === 'cyber' ? '#00ff9f' : '#ffffff',
+                border: theme === 'cyber' ? '1px solid #00ff9f' : 'none',
+              }}
+            >
+              📊 View Tenant Logs
+            </a>
+          </div>
+        </div>
+
         <div className="mb-6">
           <h4 className="text-lg font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>
             Status Timeline
