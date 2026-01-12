@@ -1,10 +1,10 @@
 # O.A.S.I.S. Phase Tracker
 
-**Last Updated:** 2026-01-12 (Phase 2B complete - enhanced agent data, deployment fixes, OCSF severity alignment)
+**Last Updated:** 2026-01-12 (Phase 2C in progress - subscriptions, dashboards, agent timeline APIs)
 
 ## Current Status
 
-**Active Phase:** Phase 2C - S.O.C.A.P. - Analyst Dashboards & Workflows (NEXT)  
+**Active Phase:** Phase 2C - S.O.C.A.P. - Analyst Dashboards & Workflows (In Progress)  
 **Branch:** `develop`  
 **Production Release:** v1.0.0 (when ALL phases complete)
 
@@ -326,8 +326,7 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 ---
 
 #### Phase 2C: S.O.C.A.P. - Analyst Dashboards & Workflows
-**Status:** Pending  
-**Estimated Duration:** 2-3 weeks
+**Status:** In Progress (started 2026-01-12) | **Branch:** `develop`
 
 **Goals:**
 - Analyst subscription system
@@ -336,12 +335,21 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - Alert placeholders for Phase 3
 
 **Completion Criteria:**
-- [ ] Database: `analyst_tenant_subscriptions` (analyst_id, tenant_id, notification_level)
-- [ ] API: `POST /api/subscriptions` (subscribe/unsubscribe to tenants)
-- [ ] API: `GET /api/subscriptions` (list analyst's subscribed tenants)
-- [ ] S.O.C.A.P.: "My Tenants" vs "All Tenants" toggle
+- [x] Database: `dashboard_templates` table (custom dashboards with widgets)
+- [x] Database: `agent_status_timeline` table (historical status tracking)
+- [x] API: `POST /api/subscriptions` (subscribe/unsubscribe to tenants)
+- [x] API: `GET /api/subscriptions` (list analyst's subscribed tenants)
+- [x] API: `PUT /api/subscriptions/{tenant_id}` (update notification level)
+- [x] API: `DELETE /api/subscriptions/{tenant_id}` (unsubscribe)
+- [x] API: `GET /api/dashboards` (list dashboards and templates)
+- [x] API: `POST /api/dashboards` (create custom dashboard)
+- [x] API: `GET /api/dashboards/{id}` (get dashboard details)
+- [x] API: `DELETE /api/dashboards/{id}` (soft delete dashboard)
+- [x] API: `GET /api/agents/{id}/timeline` (agent status history)
+- [x] S.O.C.A.P.: "My Tenants" vs "All Tenants" toggle (agents page)
+- [ ] S.O.C.A.P.: "My Tenants" vs "All Tenants" toggle (dashboard page)
 - [ ] S.O.C.A.P.: Custom dashboard builder (drag-drop widgets)
-- [ ] S.O.C.A.P.: Agent status timeline (last 7 days)
+- [ ] S.O.C.A.P.: Agent status timeline visualization (last 7 days)
 - [ ] S.O.C.A.P.: Clickable drill-downs (tenant → agents → logs)
 - [ ] UI components: Alert placeholders (for Phase 3 integration)
 
@@ -349,6 +357,41 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - Analysts can see ALL tenants (no hard restrictions)
 - Subscribe to tenants for focused monitoring and notifications
 - Subscription level: `all`, `critical_only`, `none`
+
+**Database Schema Added:**
+- `dashboard_templates` table:
+  - Custom dashboards with configurable widgets
+  - Support for templates (shareable across analysts)
+  - Tenant scope filtering (all, subscribed, specific tenants)
+  - Soft delete support (is_deleted flag)
+- `agent_status_timeline` table:
+  - Historical agent status changes
+  - Auto-cleanup for entries older than 90 days
+  - Trigger to log status changes on agent updates
+
+**API Endpoints Added:**
+- **Subscriptions:**
+  - `GET /api/subscriptions` - List analyst's subscriptions
+  - `POST /api/subscriptions` - Subscribe to tenant (or update existing)
+  - `PUT /api/subscriptions/{tenant_id}` - Update notification level
+  - `DELETE /api/subscriptions/{tenant_id}` - Unsubscribe
+- **Dashboards:**
+  - `GET /api/dashboards` - List dashboards (with templates option)
+  - `POST /api/dashboards` - Create dashboard
+  - `GET /api/dashboards/{id}` - Get dashboard details
+  - `DELETE /api/dashboards/{id}` - Soft delete dashboard
+- **Agent Timeline:**
+  - `GET /api/agents/{id}/timeline?days=N` - Get status history (1-90 days)
+
+**Default Dashboard Templates:**
+- **SOC Overview:** High-level system activity, log volume, agent status, top sources, severity distribution
+- **Tenant Health:** Detailed tenant metrics, per-tenant log volume, agent listings
+
+**Git Commits (Phase 2C):**
+| Commit | Feature |
+|--------|---------|
+| 1971b80 | feat(phase2c): add analyst dashboard, subscription, and agent timeline APIs |
+| 17c4bbb | feat(soc-portal): add 'My Tenants' toggle to agents page |
 
 ---
 
