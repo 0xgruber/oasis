@@ -74,6 +74,10 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+log_debug() {
+    echo -e "${GRAY}[DEBUG]${NC} $1"
+}
+
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         log_error "This script must be run as root (use sudo)"
@@ -501,7 +505,7 @@ register_agent() {
     local hostname=$(hostname)
     local os_type="Linux"
     local os_version=$(get_full_os_version)
-    local agent_version=$(fluent-bit --version | head -n1 | awk '{print $3}')
+    local agent_version=$(/opt/fluent-bit/bin/fluent-bit --version | head -n1 | awk '{print $3}')
 
     local arch=$(get_system_arch)
     local kernel_version=$(get_kernel_version)
