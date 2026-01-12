@@ -100,20 +100,75 @@ function Show-Summary {
     Write-Host ""
 }
 
+function Remove-Dependencies {
+    Write-Host ""
+    Write-Info "=== Dependency Removal ==="
+    Write-Host ""
+    Write-Info "Checking for additional Fluent Bit components..."
+    Write-Host ""
+
+    # Check for Fluent Bit installation in other locations (possible manual installs)
+    $fluentbitPaths = @(
+        "C:\Program Files\fluent-bit",
+        "C:\Program Files (x86)\fluent-bit",
+        "${env:ProgramData}\fluent-bit",
+        "${env:LOCALAPPDATA}\fluent-bit"
+    )
+
+    $foundPaths = @()
+    foreach ($path in $fluentbitPaths) {
+        if (Test-Path $path) {
+            $foundPaths += $path
+            Write-Info "Found Fluent Bit installation: $path"
+        }
+    }
+
+    if ($foundPaths.Count -gt 0) {
+        Write-Host ""
+        $response = Read-Host "Would you like to remove these additional Fluent Bit installations? [(y)es/(N)o]"
+        if ($response -eq "y" -or $response -eq "Y") {
+            foreach ($path in $foundPaths) {
+                Write-Info "Removing: $path"
+                Remove-Item -Path $path -Recurse -Force -ErrorAction SilentlyContinue
+                if (-not (Test-Path $path)) {
+                    Write-Success "Removed: $path"
+                }
+            }
+        } else {
+            Write-Info "Skipping additional Fluent Bit installations"
+        }
+    } else {
+        Write-Info "No additional Fluent Bit installations found"
+    }
+
+    Write-Host ""
+    Write-Info "Note: This script does not remove system-level dependencies as Windows components (curl, etc.) are provided by the operating system."
+    Write-Host ""
+}
+
 function Main {
     Write-Host ""
     Write-Info "=== O.A.S.I.S. Fluent Bit Cleanup (Windows) ==="
     Write-Host ""
-    
+
     $response = Read-Host "This will completely remove Fluent Bit. Continue? (y/N)"
     if ($response -ne "y" -and $response -ne "Y") {
         Write-Info "Cleanup cancelled"
         exit 0
     }
-    
+
+    Write-Host ""
+    $removeDeps = Read-Host "Would you like to check for and remove additional Fluent Bit installations? [Y/n]"
+    Write-Host ""
+
     Stop-FluentBitService
     Remove-Installation
     Remove-DataFiles
+
+    if ($removeDeps -eq "" -or $removeDeps -eq "y" -or $removeDeps -eq "Y") {
+        Remove-Dependencies
+    }
+
     Show-Summary
 }
 

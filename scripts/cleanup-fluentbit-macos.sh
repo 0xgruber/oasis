@@ -64,7 +64,7 @@ stop_service() {
 
 uninstall_package() {
     log_info "Uninstalling Fluent Bit package..."
-    
+
     if command -v brew &> /dev/null; then
         if su - ${SUDO_USER} -c "brew list fluent-bit &>/dev/null"; then
             su - ${SUDO_USER} -c "brew uninstall fluent-bit"
@@ -74,6 +74,37 @@ uninstall_package() {
         fi
     else
         log_info "Homebrew not found, skipping package removal"
+    fi
+}
+
+remove_dependencies() {
+    log_info "Removing Homebrew packages..."
+    log_info "Checking for fluent-bit installation via Homebrew..."
+
+    if command -v brew &> /dev/null; then
+        # Get the current user if SUDO_USER is not set
+        current_user=${SUDO_USER:-$(whoami)}
+
+        if su - ${current_user} -c "brew list fluent-bit &>/dev/null"; then
+            log_info "fluent-bit is installed via Homebrew"
+            echo
+            read -p "Remove fluent-bit from Homebrew? [(y)es/(N)o]: " remove_fluentbit
+
+            if [[ "$remove_fluentbit" =~ ^[Yy]$ ]]; then
+                su - ${current_user} -c "brew uninstall fluent-bit"
+                log_success "fluent-bit removed from Homebrew"
+            else
+                log_info "Skipping fluent-bit removal"
+            fi
+        else
+            log_info "fluent-bit not installed via Homebrew"
+        fi
+
+        echo
+        log_warning "Note: Other Homebrew packages are not removed to preserve user environments."
+        log_info "To remove Homebrew entirely, run: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/uninstall.sh)\""
+    else
+        log_info "Homebrew not found"
     fi
 }
 
@@ -111,20 +142,29 @@ main() {
     echo
     log_info "=== O.A.S.I.S. Fluent Bit Cleanup (macOS) ==="
     echo
-    
+
     read -p "This will completely remove Fluent Bit. Continue? (y/N): " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         log_info "Cleanup cancelled"
         exit 0
     fi
-    
+
+    echo
+    read -p "Would you like to remove dependencies? (fluent-bit via Homebrew) [Y/n]: " remove_deps
+    echo
+
     check_root
-    
+
     stop_service
     uninstall_package
     remove_configs
     remove_logs
-    
+
+    if [[ "$remove_deps" =~ ^[Yy]|^$ ]]; then
+        echo
+        remove_dependencies
+    fi
+
     print_summary
 }
 

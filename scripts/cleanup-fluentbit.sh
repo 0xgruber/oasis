@@ -207,13 +207,84 @@ remove_logs() {
 
 remove_data() {
     log_info "Removing data files..."
-    
+
     if [ -d "$LIB_DIR" ]; then
         rm -rf "$LIB_DIR"
         log_success "Data removed: $LIB_DIR"
     else
         log_info "Data directory not found"
     fi
+}
+
+remove_dependencies() {
+    log_info "Removing dependencies (curl, wget, systemd)..."
+    log_warning "These packages may be used by other applications. Remove carefully."
+    echo
+    read -p "Remove curl? [(y)es/(N)o]: " remove_curl
+    read -p "Remove wget? [(y)es/(N)o]: " remove_wget
+    read -p "Remove systemd? [(y)es/(N)o]: " remove_systemd
+
+    case $OS_FAMILY in
+        ubuntu|debian)
+            if [[ "$remove_curl" =~ ^[Yy]$ ]]; then
+                apt-get remove -y curl
+                log_success "curl removed"
+            fi
+            if [[ "$remove_wget" =~ ^[Yy]$ ]]; then
+                apt-get remove -y wget
+                log_success "wget removed"
+            fi
+            if [[ "$remove_systemd" =~ ^[Yy]$ ]]; then
+                log_warning "WARNING: Removing systemd may break your system. Skipping."
+                log_info "Cannot remove systemd safely. Please use your package manager manually if you're certain."
+            fi
+            ;;
+            
+        rhel|centos|fedora)
+            if [[ "$remove_curl" =~ ^[Yy]$ ]]; then
+                if command -v dnf &> /dev/null; then
+                    dnf remove -y curl
+                else
+                    yum remove -y curl
+                fi
+                log_success "curl removed"
+            fi
+            if [[ "$remove_wget" =~ ^[Yy]$ ]]; then
+                if command -v dnf &> /dev/null; then
+                    dnf remove -y wget
+                else
+                    yum remove -y wget
+                fi
+                log_success "wget removed"
+            fi
+            if [[ "$remove_systemd" =~ ^[Yy]$ ]]; then
+                log_warning "WARNING: Removing systemd may break your system. Skipping."
+                log_info "Cannot remove systemd safely. Please use your package manager manually if you're certain."
+            fi
+            ;;
+            
+        suse)
+            if [[ "$remove_curl" =~ ^[Yy]$ ]]; then
+                zypper remove -y curl
+                log_success "curl removed"
+            fi
+            if [[ "$remove_wget" =~ ^[Yy]$ ]]; then
+                zypper remove -y wget
+                log_success "wget removed"
+            fi
+            if [[ "$remove_systemd" =~ ^[Yy]$ ]]; then
+                log_warning "WARNING: Removing systemd may break your system. Skipping."
+                log_info "Cannot remove systemd safely. Please use zypper manually if you're certain."
+            fi
+            ;;
+            
+        *)
+            log_warning "Unknown OS: $OS - skipping dependency removal"
+            ;;
+    esac
+    
+    echo
+    log_success "Dependency removal complete"
 }
 
 print_summary() {
@@ -228,23 +299,33 @@ main() {
     echo
     log_info "=== O.A.S.I.S. Fluent Bit Cleanup ==="
     echo
-    
+
     read -p "This will completely remove Fluent Bit. Continue? (y/N): " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         log_info "Cleanup cancelled"
         exit 0
     fi
-    
+
+    echo
+    read -p "Would you like to remove dependencies? (curl, wget, systemd) [Y/n]: " remove_deps
+    echo
+    log_info "Please note: systemd is a core system component and will NOT be removed for safety reasons."
+
     check_root
     detect_os
-    
+
     stop_service
     remove_service_file
     remove_package
     remove_configs
     remove_logs
     remove_data
-    
+
+    if [[ "$remove_deps" =~ ^[Yy]|^$ ]]; then
+        echo
+        remove_dependencies
+    fi
+
     print_summary
 }
 
