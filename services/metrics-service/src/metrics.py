@@ -392,6 +392,7 @@ async def get_agent_metrics(agent_id: str) -> Dict[str, Any]:
                         # Add additional agent info
                         metrics["os_type"] = agent["os_type"]
                         metrics["agent_type"] = agent["agent_type"]
+                        metrics["agent_role"] = agent["agent_role"]
 
                         # Get logs count for this agent from ClickHouse
                         if ch_client and agent["tenant_id"]:
@@ -477,6 +478,7 @@ async def get_agents_list(
                         os_type,
                         os_version,
                         agent_type,
+                        agent_role,
                         is_active
                     FROM agents
                     WHERE is_active = true
@@ -524,6 +526,7 @@ async def get_agents_list(
                             "os_type": row["os_type"],
                             "os_version": row["os_version"],
                             "agent_type": row["agent_type"],
+                            "agent_role": row["agent_role"],
                         }
                     )
 
@@ -587,6 +590,7 @@ async def get_agent_by_id(agent_id: str) -> Dict[str, Any] | None:
                         os_type,
                         os_version,
                         agent_type,
+                        agent_role,
                         is_active,
                         created_at,
                         updated_at
@@ -620,6 +624,7 @@ async def get_agent_by_id(agent_id: str) -> Dict[str, Any] | None:
                     "os_type": row["os_type"],
                     "os_version": row["os_version"],
                     "agent_type": row["agent_type"],
+                    "agent_role": row["agent_role"],
                     "is_active": row["is_active"],
                     "created_at": row["created_at"].isoformat() if row["created_at"] else None,
                     "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { tokenUtils } from '@/lib/auth';
+import Toast from '@/components/Toast';
 
 interface Agent {
   agent_id: string;
@@ -14,6 +15,7 @@ interface Agent {
   os_type: string | null;
   os_version: string | null;
   agent_type: string;
+  agent_role?: 'agent' | 'collector';
 }
 
 interface AgentListResponse {
@@ -52,6 +54,10 @@ export default function AgentsPage() {
   const [offset, setOffset] = useState(0);
 
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  // Agent detail toast
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   const fetchBreakdown = async () => {
     try {
@@ -172,6 +178,20 @@ export default function AgentsPage() {
     
     const diffMonths = Math.floor(diffDays / 30);
     return `${diffMonths}mo ago`;
+  };
+
+  const formatAgentDetails = (agent: Agent): string => {
+    const details = [
+      `Agent ID: ${agent.agent_id}`,
+      `Hostname: ${agent.hostname}`,
+      `Status: ${agent.status.toUpperCase()}`,
+      `OS: ${agent.os_type || 'Unknown'} ${agent.os_version || ''}`,
+      `Type: ${agent.agent_type}`,
+      `Role: ${agent.agent_role === 'collector' ? 'Collector' : 'Agent'}`,
+      `Last Seen: ${formatLastSeen(agent.last_seen)}`,
+    ].join('\n\n');
+    
+    return `Agent Details\n\n${details}`;
   };
 
   const filteredAgents = agents.filter(agent => {
@@ -342,7 +362,7 @@ export default function AgentsPage() {
                 OS
               </th>
               <th className="text-left px-6 py-3 text-xs font-semibold uppercase" style={{ color: 'var(--text-secondary)' }}>
-                Agent Type
+                Role
               </th>
               <th className="text-left px-6 py-3 text-xs font-semibold uppercase" style={{ color: 'var(--text-secondary)' }}>
                 Last Seen
@@ -365,10 +385,14 @@ export default function AgentsPage() {
                 return (
                   <tr
                     key={agent.agent_id}
+                    onClick={() => {
+                      setToastMessage(formatAgentDetails(agent));
+                      setShowToast(true);
+                    }}
                     style={{ 
                       borderBottom: idx < filteredAgents.length - 1 ? `1px solid var(--card-border)` : undefined 
                     }}
-                    className="hover:bg-opacity-50 transition-colors"
+                    className="cursor-pointer hover:bg-opacity-50 transition-colors"
                   >
                     <td className="px-6 py-4">
                       <span className={badge.className} style={badge.style}>
@@ -391,7 +415,15 @@ export default function AgentsPage() {
                       )}
                     </td>
                     <td className="px-6 py-4" style={{ color: 'var(--text-primary)' }}>
-                      {agent.agent_type}
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-semibold ${
+                          agent.agent_role === 'collector'
+                            ? 'bg-purple-100 text-purple-800'
+                            : 'bg-blue-100 text-blue-800'
+                        }`}
+                      >
+                        {agent.agent_role === 'collector' ? 'Collector' : 'Agent'}
+                      </span>
                     </td>
                     <td className="px-6 py-4" style={{ color: 'var(--text-secondary)' }}>
                       {formatLastSeen(agent.last_seen)}
@@ -442,6 +474,14 @@ export default function AgentsPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {showToast && (
+        <Toast
+          message={toastMessage}
+          onClose={() => setShowToast(false)}
+          showPickaxe={false}
+        />
       )}
     </div>
   );
