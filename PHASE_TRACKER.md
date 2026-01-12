@@ -206,15 +206,15 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 ---
 
 #### Phase 2B: Agent Management & Monitoring
-**Status:** In Progress  
-**Started:** 2026-01-11  
-**Estimated Duration:** 2-3 weeks
+**Status:** Complete ✅  
+**Completed:** 2026-01-11  
+**Branch:** `develop`
 
 **Goals:**
 - Agent data model and heartbeat mechanism
 - Dynamic status calculation (online/offline/dead)
 - Per-tenant threshold overrides
-- Agent management UIs across all portals
+- Agent management UIs across Admin and SOC portals
 
 **Completion Criteria:**
 - [x] Agent heartbeat: Update `last_seen_at` on log ingestion
@@ -225,8 +225,11 @@ O.A.S.I.S. operates as a managed SOC service. Customers deploy Fluent Bit agents
 - [x] API: `GET /api/agents/status` (status breakdown)
 - [x] Admin Portal: Agent listing UI (list, filters, search, pagination, status breakdown)
 - [x] S.O.C.A.P.: Global agent dashboard (all tenants, status breakdown)
-- [ ] Customer Portal: Agent view (tenant-isolated, download config)
-- [ ] Config download: Generate fresh API key on `tenant.conf` download
+
+**Notes:**
+- Customer Portal agent view moved to Phase 2D (self-service features)
+- Config download with API key generation moved to Phase 2D
+- Phase 2B now complete - foundation for all agent management across internal portals
 
 **Agent Status System:**
 - States: `online`, `offline`, `dead`, `error`
